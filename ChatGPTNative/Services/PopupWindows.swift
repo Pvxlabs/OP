@@ -9,7 +9,7 @@ final class PopupWindows: NSObject, NSWindowDelegate {
     private var sessions: [NSWindow: BrowserSession] = [:]
 
     func open(configuration: WKWebViewConfiguration) -> WKWebView {
-        let session = BrowserSession(configuration: configuration, loadHome: false)
+        let session = BrowserSession(configuration: configuration, loadHome: false, observeMessages: false)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "ChatGPT Native — Web Window"
@@ -22,6 +22,6 @@ final class PopupWindows: NSObject, NSWindowDelegate {
         return session.webView
     }
     func windowWillClose(_ notification: Notification) {
-        if let window = notification.object as? NSWindow { sessions.removeValue(forKey: window) }
+        if let window = notification.object as? NSWindow { sessions.removeValue(forKey: window)?.retire() }
     }
 }

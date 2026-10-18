@@ -40,6 +40,7 @@ struct QuickLaunchMenu: View {
 }
 
 struct BrowserCommands: Commands {
+    @FocusedValue(\.browserWorkspace) private var workspace
     private func send(_ action: Selector) { NSApp.sendAction(action, to: nil, from: nil) }
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -56,6 +57,20 @@ struct BrowserCommands: Commands {
             Button("Actual Size") { send(#selector(BrowserView.resetZoom)) }.keyboardShortcut("0")
             Divider()
             Button("Enable Download Notifications…") { Notifications.requestPermission() }
+        }
+        CommandMenu("本地副本") {
+            Button("查看保护状态…") { workspace?.showProtectionStatus = true }
+                .disabled(workspace == nil)
+            Button("查看本地回复…") { workspace?.recover() }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(workspace == nil)
+            if let workspace {
+                Toggle("保存本地快照", isOn: Binding(get: { workspace.library.enabled }, set: { workspace.library.enabled = $0 }))
+                Divider()
+                ForEach(workspace.library.recent.prefix(12)) { item in
+                    Button(item.label) { workspace.open(item) }
+                }
+            }
         }
     }
 }

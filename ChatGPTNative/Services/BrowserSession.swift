@@ -15,32 +15,128 @@ final class BrowserView: WKWebView {
 
 @MainActor @Observable
 final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+    let id = UUID()
     let webView: BrowserView
     var error: String?
+    var conversationID: String?
+    var pageState: PageObservation = .unavailable
+    var navigationStarts = 0
+    var navigationFinishes = 0
+    var lastLoadMilliseconds: Double?
+    var lastHTTPStatus: Int?
+    var observerAvailable = false
+    private var navigationBegan: ContinuousClock.Instant?
+    private var started = false
+    private var retired = false
+    private let library: SnapshotLibrary
+    private let observer: MessageObserver?
+    private let allowFixtures: Bool
+    private var locationObservation: NSKeyValueObservation?
     private var destinations: [WKDownload: (temporary: URL, final: URL)] = [:]
     private let logger = Logger(subsystem: "local.personal.ChatGPTNative", category: "Navigation")
 
-    init(configuration: WKWebViewConfiguration? = nil, loadHome: Bool = true) {
+    init(configuration: WKWebViewConfiguration? = nil, loadHome: Bool = true,
+         library: SnapshotLibrary = .shared, observeMessages: Bool = true, allowFixtures: Bool = false) {
+        self.library = library
+        self.allowFixtures = allowFixtures
         let config = configuration ?? WKWebViewConfiguration()
         if configuration == nil { config.websiteDataStore = .default() }
+        observer = observeMessages ? MessageObserver(allowFixtures: allowFixtures, enabled: library.enabled) : nil
+        if let observer {
+            do { try observer.install(on: config.userContentController); observerAvailable = true }
+            catch { observerAvailable = false }
+        }
         webView = BrowserView(frame: .zero, configuration: config)
         super.init()
+        observer?.webView = webView
+        observer?.receive = { [weak self] batch in
+            guard let self, !self.retired else { return false }
+            self.conversationID = batch.conversationID
+            self.pageState = batch.pageState
+            return await self.library.receive(batch)
+        }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        if loadHome { webView.newChat() }
+        locationObservation = webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.updateLocation() }
+        }
+        watchCapturePreference()
+        if loadHome { startOnce(at: URL(string: "https://chatgpt.com/")!) }
+    }
+
+    func startOnce(at url: URL) {
+        guard !started, !retired else { return }
+        started = true
+        conversationID = SnapshotIdentity.conversation(in: url)
+        webView.load(URLRequest(url: url))
+    }
+    func matches(_ conversation: String) -> Bool {
+        if allowFixtures, webView.url?.scheme == "snapshot-fixture" {
+            return webView.url?.lastPathComponent.lowercased() == conversation
+        }
+        return SnapshotIdentity.conversation(in: webView.url) == conversation
+    }
+    private func updateLocation() {
+        let previous = conversationID
+        if let official = SnapshotIdentity.conversation(in: webView.url) { conversationID = official }
+        else if allowFixtures, let value = webView.url?.lastPathComponent, SnapshotIdentity.valid(value) { conversationID = value.lowercased() }
+        else { conversationID = nil }
+        if previous != conversationID { library.interrupt(previous); pageState = .unavailable }
+    }
+    private func watchCapturePreference() {
+        guard !retired, observer != nil else { return }
+        withObservationTracking { _ = library.enabled } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.applyCapturePreference()
+                self?.watchCapturePreference()
+            }
+        }
+    }
+    private func applyCapturePreference() {
+        guard !retired, observer != nil else { return }
+        webView.callAsyncJavaScript("if (typeof __nativeSnapshotSetEnabled === 'function') __nativeSnapshotSetEnabled(enabled)",
+            arguments: ["enabled": library.enabled], in: nil, in: MessageObserver.world, completionHandler: { _ in })
+    }
+    func retire() {
+        guard !retired else { return }
+        retired = true
+        library.interrupt(conversationID)
+        webView.stopLoading()
+        if observer != nil {
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: MessageObserver.handlerName,
+                                                                                  contentWorld: MessageObserver.world)
+        }
+        observer?.receive = nil
+        locationObservation = nil
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         error = nil
+        library.interrupt(conversationID)
+        pageState = .unavailable
+        navigationStarts += 1
+        navigationBegan = .now
         logger.info("navigation started")
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        navigationFinishes += 1
+        if let navigationBegan {
+            let duration = navigationBegan.duration(to: .now).components
+            lastLoadMilliseconds = Double(duration.seconds) * 1000 + Double(duration.attoseconds) / 1e15
+        }
+        updateLocation()
+        // The script was injected at document end; apply any preference change during navigation.
+        applyCapturePreference()
         logger.info("navigation finished host=\(webView.url?.host ?? "unknown", privacy: .public)")
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { record(error) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { record(error) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        library.interrupt(conversationID)
+        pageState = .interrupted
         error = "Web content process stopped. Reload to continue."
         logger.error("web content process terminated")
     }
@@ -48,6 +144,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
         let code = (failure as NSError).code
         guard code != NSURLErrorCancelled else { return }
         error = failure.localizedDescription
+        pageState = .readFailure
         logger.error("operation failed code=\(code)")
     }
 
@@ -56,7 +153,8 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
         logger.info("navigation policy scheme=\(navigationAction.request.url?.scheme ?? "none", privacy: .public) download=\(navigationAction.shouldPerformDownload)")
         if navigationAction.shouldPerformDownload { decisionHandler(.download); return }
         if let url = navigationAction.request.url, let scheme = url.scheme,
-           !["https", "http", "about", "blob", "data"].contains(scheme) {
+           !["https", "http", "about", "blob", "data"].contains(scheme),
+           !(allowFixtures && scheme == "snapshot-fixture") {
             if navigationAction.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
             return
@@ -66,6 +164,13 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
         logger.info("response policy mime=\(navigationResponse.response.mimeType ?? "none", privacy: .public)")
+        if navigationResponse.isForMainFrame, let response = navigationResponse.response as? HTTPURLResponse {
+            lastHTTPStatus = response.statusCode
+            if response.statusCode >= 400 {
+                pageState = .readFailure
+                error = "官方网页读取失败（HTTP \(response.statusCode)）。可查看本地副本。"
+            }
+        }
         decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
     }
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {

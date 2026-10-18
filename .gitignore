@@ -10,6 +10,9 @@ xcuserdata/
 
 # Raw build/runtime evidence remains local; summaries live in docs/*.md
 *.log
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # Share only the reviewed Codex Run configuration
 /.codex/*

@@ -2,6 +2,10 @@
 
 2026-10-19. Personal native macOS client. User explicitly waived Linear.
 
+This document records the 0.1.0 baseline. The 0.2.0 local protection extension is
+specified in [REPLY-PROTECTION-SPEC.md](REPLY-PROTECTION-SPEC.md), which supersedes
+the single-WebView ownership description below for the development upgrade.
+
 ## Objective and boundaries
 Swift 6 + SwiftUI + public WKWebView APIs, directly load https://chatgpt.com/.
 Preserve official web UI. No OpenAI API, server, Electron, Chromium, DOM restyling,
