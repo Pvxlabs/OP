@@ -1,0 +1,27 @@
+# Local build products and Xcode user state
+/build/
+/DerivedData/
+*.app/
+*.dSYM/
+*.xcarchive/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+
+# Raw build/runtime evidence remains local; summaries live in docs/*.md
+*.log
+
+# Share only the reviewed Codex Run configuration
+/.codex/*
+!/.codex/environments/
+/.codex/environments/*
+!/.codex/environments/environment.toml
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile

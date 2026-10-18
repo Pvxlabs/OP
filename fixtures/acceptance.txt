@@ -1,0 +1,3 @@
+CHATGPT_NATIVE_UPLOAD_OK
+This is a synthetic, non-sensitive file for upload and download acceptance.
+Expected record count: 3
