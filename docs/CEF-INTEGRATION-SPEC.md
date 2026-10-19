@@ -66,6 +66,26 @@ must include real native pointer hover evidence and current isolated CEF tests,
 then a backed-up, hash-verified installation on Air. The export and delivery
 receipt are retained locally under `build/Figma-Delivery-20261020`.
 
+2026-10-20 background completion notification amendment: after observing a
+live assistant turn move from in_progress to complete and settle for 1.5 seconds,
+request one macOS local notification only when OP is inactive. Historical
+completed turns, reloads, foreground completion, errors, user Stop and duplicate
+DOM observations are silent. A later regeneration may notify once again.
+
+A separate metadata-only observer in the existing trusted main-frame isolated
+world emits only document/conversation identity and a sequence number. It must
+work when snapshots are paused or message capture identity is unavailable,
+without weakening snapshot validation or starting CLINX work. No server, APNs
+account, network polling or reply body is involved. Page completion remains
+separate from server-side completeness. Closed/unloaded pages, sleep and OS
+notification/Focus policy remain delivery boundaries.
+
+Use UserNotifications authorization for alert/sound. 页面 > 后台回复完成提醒
+persists the on/off choice. Notifications use generic text and clicking one
+returns to its conversation. Validate actual CEF transitions and native policy
+through an isolated delivery sink; record authorization/banner interaction
+separately from those tests. Preserve the owner-approved header unchanged.
+
 ## Milestones and gates
 
 1. Establish build target/runtime: pinned CEF 154.0.34+g14c5a08+chromium-154.0.8037.98; AppKit+SwiftUI host; same-identity nested signing; bounded shutdown before CefShutdown. Verify Release/signature/startup before adding real-login acceptance.

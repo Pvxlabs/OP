@@ -63,6 +63,8 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     Command("Page.enable"); Command("Runtime.enable");
     auto binding = CefDictionaryValue::Create(); binding->SetString("name", "__opSnapshot"); binding->SetString("executionContextName", world_);
     Command("Runtime.addBinding", binding);
+    auto completion = CefDictionaryValue::Create(); completion->SetString("name", "__opReplyEnded"); completion->SetString("executionContextName", world_);
+    Command("Runtime.addBinding", completion);
     auto script = CefDictionaryValue::Create(); script->SetString("worldName", world_); script->SetString("source", worldSource);
     script->SetBool("runImmediately", true); install_ = Command("Page.addScriptToEvaluateOnNewDocument", script);
     tree_ = Command("Page.getFrameTree"); Event("created");
@@ -166,8 +168,14 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     } else if (name == "Runtime.bindingCalled") {
       int context = p->GetInt("executionContextId");
       Event("bindingReceived", contexts_.count(context) ? (contexts_[context] == mainFrame_ ? "main" : "other") : "unknown");
-      if (p->GetString("name") != "__opSnapshot" || !contexts_.count(context) || contexts_[context] != mainFrame_ || mainFrame_.empty()) return;
+      if (!contexts_.count(context) || contexts_[context] != mainFrame_ || mainFrame_.empty()) return;
       std::string url = browser_->GetMainFrame()->GetURL();
+      if (p->GetString("name") == "__opReplyEnded") {
+        std::string payload = p->GetString("payload");
+        if (!Origin(url).empty() && payload.size() <= 4096) Event("replyEnded", payload);
+        return;
+      }
+      if (p->GetString("name") != "__opSnapshot") return;
       if (!enabled_ || Origin(url).empty() || pending_.count(context)) return;
       std::string payload = p->GetString("payload"); auto data = Dictionary(payload.data(), payload.size());
       if (!data || !data->GetDictionary("batch") || data->GetInt("request") <= 0) return;
@@ -244,7 +252,7 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     p->SetBool("returnByValue", true); diagnostic_ = Command("Runtime.evaluate", p);
   }
   void TestIsolation() {
-    auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined'");
+    auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__opReplyEnded === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined'");
     p->SetBool("returnByValue", true); isolationTest_ = Command("Runtime.evaluate", p);
   }
   void Query(const std::string& payload) {
@@ -350,6 +358,9 @@ int main(int argc, char* argv[]) {
       if ([test.scheme isEqual:@"http"] && [test.host isEqual:@"127.0.0.1"] && test.port && [test.path isEqual:@""]) fixtureOrigin = value;
     }
     worldSource = source.UTF8String;
+    NSString* completion = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"ReplyCompletion" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
+    if (!completion) return 2;
+    worldSource += "\n"; worldSource += completion.UTF8String;
     const std::string marker = "__OP_FIXTURE_ORIGIN__";
     size_t pos;
     while ((pos = worldSource.find(marker)) != std::string::npos) worldSource.replace(pos, marker.size(), fixtureOrigin);

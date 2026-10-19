@@ -188,6 +188,7 @@ import AppKit
                 try check((await product.library.messages(streamingID)).first?.state == .interrupted, "closing an unfinished stream marks it interrupted")
                 try mode("normal")
                 try await runExecutionQuery()
+                try await runReplyNotifications()
             }
             let elapsed = began.duration(to: .now).components
             metrics["suiteSeconds"] = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18

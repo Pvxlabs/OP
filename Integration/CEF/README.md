@@ -53,6 +53,26 @@ Native icon-only query and refresh controls sit at top right. Header styling fol
 
 The query button sends a fixed execution-status message in the current ordinary ChatGPT conversation; ChatGPT looks up the task through CLINX using its existing context. OP has no task inbox, ID identification, pairing/binding, Observer configuration or background polling. Drafts, attachments, active generation and visible modals block sending with a native explanation; uncertain sends are never auto-retried. Startup is website-first and never automatically displays local copies. 页面 > 外观 selects 跟随系统 (default), 浅色 or 夜晚 and persists the choice for all native windows and recovery UI without reloading or restyling the official website. Commands remain in File/Page menus and the menu bar entry. macOS 27 visual appearance remains unverified.
 
+## Background reply reminders
+
+页面 > 后台回复完成提醒 enables macOS local notifications (on by default).
+Allow OP's notification permission on first use. A live assistant turn must be
+observed generating and then explicitly complete with stable final text for
+1.5 seconds. OP schedules a generic alert and default sound only while inactive;
+clicking it opens the relevant conversation. No reply body appears in the notice.
+
+This metadata-only signal runs independently of local snapshot capture. Loading
+history, reloads, repeated completed DOM, foreground completion, user Stop and
+error replies do not notify. A regeneration can produce a new reminder. The
+existing isolated-world/main-frame/origin checks also protect the new binding.
+There is no CLINX query, background polling, APNs provider or additional server.
+
+OP and that conversation's renderer must remain running. Closed/evicted pages,
+sleep, missing site lifecycle signals, denied notification permission or system
+Focus policy can prevent/delay a reminder. This reports the ChatGPT webpage's
+reply ending; it does not certify server finality or completion of a remote
+Codex task mentioned in the reply.
+
 ## Installed application registration
 
 After an installed bundle replacement, `./script/refresh-op-registration.py`

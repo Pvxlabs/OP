@@ -18,9 +18,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Same website identity profile already used by the WK tests; no fake native transport.
         html = f'''<!doctype html><meta charset="utf-8"><title>OP CEF Synthetic — {conversation[-4:]}</title>
 <style>body{{font:16px system-ui;margin:32px;}} pre{{white-space:pre-wrap}} </style>
-<h1>OP CEF Integration · synthetic fixture</h1><input aria-label="Synthetic input" placeholder="Paste test">
+<h1>OP CEF Integration · synthetic fixture</h1><input aria-label="Synthetic input" placeholder="Paste test"><button onclick="window.fixture(1);setTimeout(()=>window.fixture(2),5000)">Start 5-second reply</button>
 <main><article data-talvt-turn-state="{state}"><div data-content-search-unit-key="fallback-turn-0:1:assistant" data-chatgpt-search-message-ids="{message}"><div data-chatgpt-selection-conversation-id="{conversation}" data-chatgpt-selection-message-id="{message}"><div data-dil-message-id="{message}"><pre>{body}</pre></div></div></div></article></main>
-<span role="status">回答已完成</span>
+<span role="status">回答已完成</span><button hidden data-testid="stop-button" aria-label="Stop generating" onclick="document.querySelector('article').dataset.talvtTurnState='complete'">Stop synthetic</button>
 <form id="composer" onsubmit="return false">
 <div contenteditable="true" aria-label="Synthetic message"></div>
 <button type="submit" aria-label="Send" disabled>Send synthetic message</button></form>
@@ -69,6 +69,7 @@ send.addEventListener('click',()=>{{
  if(action===21) {{delete form.dataset.suppressBubble;}}
  if(action===24) {{editor.addEventListener('input',()=>{{editor.textContent='User changed draft';}},{{once:true}});}}
  if(action===25) {{editor.addEventListener('input',()=>{{history.replaceState(null,'','/c/99999999-9999-4999-8999-999999999999');}},{{once:true}});}}
+ if(action===28) document.querySelector('[aria-label="Stop generating"]').click();
  if(action===26) {{editor.addEventListener('input',()=>{{document.getElementById('test-modal')?.remove();window.fixture(14);}},{{once:true}});}}
 }};</script>'''
         data = html.encode(); self.send_response(status); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)

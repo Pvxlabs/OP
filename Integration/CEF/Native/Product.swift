@@ -299,6 +299,7 @@ private final class HeaderButton: NSButton {
     var quitting = false
     var statusItem: NSStatusItem?
     var selfTest: CEFIntegrationTests?
+    var replyNotifications = ReplyNotifications()
     private(set) var appearance = ProductAppearance(rawValue: UserDefaults.standard.string(forKey: "nativeAppearance") ?? "") ?? .system
     private var appearanceItems: [NSMenuItem] = []
     func nextKey() -> Int64 { key += 1; return key }
@@ -331,6 +332,8 @@ private final class HeaderButton: NSButton {
         }
         item(page, "回复保护状态…", #selector(protection))
         item(page, "查询 CLINX 执行情况", #selector(queryExecution))
+        let notifications = page.addItem(withTitle: "后台回复完成提醒", action: #selector(toggleReplyNotifications(_:)), keyEquivalent: "")
+        notifications.target = self; notifications.state = replyNotifications.enabled ? .on : .off
         item(page, "诊断消息识别（仅元数据）", #selector(diagnose))
         NSApp.mainMenu = menu
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -346,13 +349,14 @@ private final class HeaderButton: NSButton {
         } else if let argument = CommandLine.arguments.first(where: { $0.hasPrefix("--open-conversation=") }),
                   SnapshotIdentity.valid(String(argument.dropFirst("--open-conversation=".count))) {
             let id = String(argument.dropFirst("--open-conversation=".count)).lowercased()
-            openWindow(url: URL(string: "https://chatgpt.com/c/" + id))
+            openWindow(url: CEFIdentity.url(.init(id: id, updatedAt: Date(), messageCount: 0)))
         } else {
             let stored = UserDefaults.standard.string(forKey: "cefLastConversation")
             let restore = stored.flatMap { SnapshotIdentity.valid($0) ? URL(string: "https://chatgpt.com/c/" + $0) : nil }
             openWindow(url: restore)
         }
         NSApp.activate(ignoringOtherApps: true)
+        replyNotifications.start()
     }
     @objc func newWindow() { openWindow(url: URL(string: "https://chatgpt.com/")) }
     func openWindow(url: URL?) { let scene = ProductWindow(library: library, url: url); windows.append(scene) }
@@ -375,6 +379,12 @@ private final class HeaderButton: NSButton {
     }
     @objc func protection() { focused?.protection(nil) }
     @objc func queryExecution() { focused?.queryExecution() }
+    @objc func toggleReplyNotifications(_ sender: NSMenuItem) {
+        replyNotifications.enabled.toggle()
+        UserDefaults.standard.set(replyNotifications.enabled, forKey: "replyNotificationsEnabled")
+        sender.state = replyNotifications.enabled ? .on : .off
+        if replyNotifications.enabled { replyNotifications.requestPermission() }
+    }
     @objc func diagnose() { if let session = focused?.workspace.active { op_cef_action(session.browser, 4) } }
     @objc func quit() {
         guard !quitting else { return }; quitting = true
@@ -398,10 +408,12 @@ private final class HeaderButton: NSButton {
     NativeProduct.shared.openWindow(url: url)
 }
 @_cdecl("op_native_event") @MainActor public func nativeEvent(_ key: Int64, _ browser: Int32, _ event: UnsafePointer<CChar>, _ value: UnsafePointer<CChar>) {
-    guard let (workspace, session) = NativeProduct.shared.session(key) else { return }
     let name = String(cString: event), value = String(cString: value)
+    if name == "closed" { NativeProduct.shared.replyNotifications.forget(key) }
+    guard let (workspace, session) = NativeProduct.shared.session(key) else { return }
     NativeProduct.shared.selfTest?.event(name, browser: browser, value: value)
     switch name {
+    case "replyEnded": NativeProduct.shared.replyNotifications.receive(value, session: session)
     case "executionQuery": session.queryResult(value)
     case "diagnostic":
         if let raw = value.data(using: .utf8), var object = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] {

@@ -1,5 +1,43 @@
 # CEF integration candidate acceptance — 2026-10-19
 
+## Background reply notifications — 2026-10-20 — Air 0.3.2
+
+Scope: a locally observed ChatGPT reply finishing while OP is inactive sends one
+macOS notification. Notification text is generic; no reply body is included.
+Click handling activates the matching conversation. The Page menu can disable
+reminders. Approved Figma header assets and layout remain unchanged.
+
+`build/CEFIntegration/evidence/run-20261020-055908`: **64 core + 4 restart PASS**.
+The nine new cases cover initial history, one background completion, duplicate
+suppression, foreground completion, no foreground replay, manual stop, errors,
+snapshot-independent detection and disabling reminders. Native bridge isolation
+and the existing header/manual-query guards also pass. These tests inject a
+notification sink; they do not prove system banner delivery or server finality.
+
+An earlier isolated review run crashed in `runReplyNotifications()` because its
+test dereferenced the active session before asynchronous creation completed.
+The test now waits for the loaded conversation before using that session. The
+owner-supplied 05:55:07 crash report matches this test frame and review bundle;
+the installed production application had not been replaced at that point.
+The complete fixed suite passed before production replacement.
+
+Release build, strict deep signature and Air replacement: **PASS**. All **285
+installed file hashes** match the release, all **61 prior reply fingerprints**
+remain, and the original bundle/data identity and profile are retained. Backup:
+`~/Library/Application Support/OP/Backups/ReplyNotifications-20261020-060451/OP.app`.
+Receipts: `build/Reply-Notifications-20261020/installation.json` and
+`post-launch-verification.json`. Installed version is 0.3.2.
+
+Air notification permission was visibly off and is now **on**, with desktop,
+Notification Center and sounds enabled. A normal isolated local fixture was
+opened for OS delivery checks; its temporary notification permission was restored
+to off and the review app quit afterwards. The system setting for mirrored/shared
+screens suppresses notifications, and the computer-use service times out when
+selecting Notification Center. Actual system banner appearance is **BLOCKED**;
+notification-click UI and real ChatGPT completion acceptance are **NOT_RUN**.
+No global Focus or screen-sharing policy was changed. The previous iMac 0.3.1
+delivery record below remains separate from this Air update.
+
 
 ## Source publication and iMac update — 2026-10-20
 

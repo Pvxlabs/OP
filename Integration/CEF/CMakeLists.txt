@@ -27,7 +27,7 @@ set(NATIVE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libOPNative.dylib")
 add_custom_command(OUTPUT "${NATIVE_LIB}"
  COMMAND xcrun swiftc -O -swift-version 6 -target arm64-apple-macos14.0 -emit-library -module-name OPNative
  -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/Bridge.h"
- -framework AppKit -framework SwiftUI -framework Security -lsqlite3 -Xlinker -undefined -Xlinker dynamic_lookup
+ -framework AppKit -framework SwiftUI -framework Security -framework UserNotifications -lsqlite3 -Xlinker -undefined -Xlinker dynamic_lookup
  -Xlinker -install_name -Xlinker @executable_path/../Frameworks/libOPNative.dylib
  ${NATIVE_SOURCES} ${SHARED_SOURCES} -o "${NATIVE_LIB}"
  DEPENDS ${NATIVE_SOURCES} ${SHARED_SOURCES} Runtime/Bridge.h VERBATIM)
@@ -52,7 +52,7 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
  string(REPLACE "\${PRODUCT_NAME}" "${_helper_output_name}" _plist_contents "${_plist_contents}")
  string(REPLACE "\${OP_BUNDLE_ID}" "${OP_BUNDLE_ID}" _plist_contents "${_plist_contents}")
  string(REPLACE "\${BUNDLE_ID_SUFFIX}" "${_plist_suffix}" _plist_contents "${_plist_contents}")
- string(REPLACE "\${VERSION_SHORT}" "0.3.1" _plist_contents "${_plist_contents}")
+ string(REPLACE "\${VERSION_SHORT}" "0.3.2" _plist_contents "${_plist_contents}")
  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/helper${_target_suffix}.plist" "${_plist_contents}")
  add_executable(${_helper_target} MACOSX_BUNDLE Runtime/Helper.cc)
  SET_EXECUTABLE_TARGET_PROPERTIES(${_helper_target})
@@ -67,6 +67,7 @@ add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
  COMMAND ${CMAKE_COMMAND} -E copy "${NATIVE_LIB}" "${CEF_APP}/Contents/Frameworks/libOPNative.dylib"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/compose-observer.py" "${OP_ROOT}/ChatGPTNative/Services/MessageObserver.js" "${CEF_APP}/Contents/Resources/CEFObserver.js"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ExecutionQuery.js" "${CEF_APP}/Contents/Resources/ExecutionQuery.js"
+ COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ReplyCompletion.js" "${CEF_APP}/Contents/Resources/ReplyCompletion.js"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/package-icon.py" "${OP_ROOT}/ChatGPTNative/Assets.xcassets/AppIcon.appiconset" "${CEF_APP}/Contents/Resources/OP.icns"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Resources/LICENSE-CEF.txt" "${CEF_APP}/Contents/Resources/LICENSE-CEF.txt"
  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Header" "${CEF_APP}/Contents/Resources/Header"

@@ -4,7 +4,7 @@ Personal macOS ChatGPT client with a **Swift 6 / SwiftUI / AppKit native shell
 and CEF (Chromium) rendering backend**. It loads https://chatgpt.com/ directly,
 uses normal website sign-in, and does not use the OpenAI API or Electron.
 
-The current local delivery is **0.3.1**, installed as `/Applications/OP.app`.
+The current local Air delivery is **0.3.2**, installed as `/Applications/OP.app`.
 The owner accepted the current Figma-matched header and everyday experience on Air on 2026-10-20.
 WebKit remains available as the 0.2.0 fallback; its source and historical tags are
 retained. This repository publishes source, tests and reviewed acceptance notes,
@@ -45,6 +45,11 @@ recovery panels. Light chrome uses #F9F9F9 with #313131 controls; night chrome u
 #1C1C1C with #A1A1AA active title/icons and a #6E6E6E inactive title.
 Night inactive hides the right icons as drawn in the owner-edited Figma design.
 Hover backgrounds are #2E2E2E with 4 pt corners. The website keeps its own appearance setting.
+
+“页面 > 后台回复完成提醒” enables local macOS notifications when an observed
+ChatGPT reply finishes while OP is in the background. Foreground replies, history,
+manual stops and detected errors stay silent. Notification delivery remains subject
+to macOS permission, Focus and screen-sharing settings.
 
 See the [CEF build/runtime guide](Integration/CEF/README.md),
 [integration contract](docs/CEF-INTEGRATION-SPEC.md) and
