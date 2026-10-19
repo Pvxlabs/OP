@@ -73,7 +73,7 @@ Capture those partials; validate the secondary ID when present, not before it ex
 
 - Planning/source review: complete.
 - Real identity/role/body gate: verified in synthetic conversation
-  6ad53b9b-28fc-83ee-bc67-e0dedda504c4. Real turn transition in_progress -> complete
+  SYNTHETIC_CONVERSATION_A. Real turn transition in_progress -> complete
   observed with body growth 0 -> 2477 DOM characters. This proves page state only.
 - Implementation: SQLite merge, delta observer, native recovery, bounded view pool.
 - Validation: see PROTECTION-ACCEPTANCE.md for exact evidence and remaining gates.

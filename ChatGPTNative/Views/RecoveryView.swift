@@ -8,6 +8,7 @@ struct RecoveryView: View {
     @State private var messages: [SavedMessage] = []
     @State private var loading = true
     @State private var confirmClear = false
+    @State private var showAlternatives = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -28,36 +29,12 @@ struct RecoveryView: View {
                 }.disabled(conversationID == nil)
             }
             if let warning = library.warning { Text(warning).foregroundStyle(.red) }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    if loading { ProgressView() }
-                    else if messages.isEmpty { Text("没有可读取的本地快照。无法识别消息身份时不会编造副本。") }
-                    ForEach(messages) { message in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(message.role == "assistant" ? "ChatGPT · 本地副本" : "用户 · 本地副本").bold()
-                                Text(message.state.label).font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                Text(message.updatedAt, style: .time).font(.caption)
-                            }
-                            if message.interruptionReason == "user-stop" {
-                                Text("观察到用户停止生成；这份副本的完整性未确认。")
-                                    .font(.caption).foregroundStyle(.orange)
-                            } else if message.lastObservation == .readFailure || message.lastObservation == .interrupted {
-                                Text("最近的官方读取失败或采集中断；保留以下已保存正文。")
-                                    .font(.caption).foregroundStyle(.orange)
-                            }
-                            Text(message.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                            if let alternative = message.alternativeBody {
-                                DisclosureGroup("同一消息观察到不同文本，原副本已保留") {
-                                    Text(alternative).textSelection(.enabled)
-                                }.font(.callout)
-                            }
-                            Divider()
-                        }
-                    }
-                }.padding(4)
+            if messages.contains(where: \.hasConflict) {
+                Toggle("显示同一消息的不同文本", isOn: $showAlternatives).toggleStyle(.checkbox)
             }
+            if loading { ProgressView() }
+            else if messages.isEmpty { Text("没有可读取的本地快照。无法识别消息身份时不会编造副本。") }
+            CachedReplyText(text: Self.transcript(messages, showAlternatives: showAlternatives))
             HStack {
                 Toggle("保存本地快照", isOn: Binding(get: { library.enabled }, set: { library.enabled = $0 }))
                 Spacer()
@@ -80,4 +57,23 @@ struct RecoveryView: View {
             Button("清除并暂停采集", role: .destructive) { Task { await library.clear(); conversationID = nil } }
         } message: { Text("无法从本机撤销。不会清除网站数据或退出登录。") }
     }
+
+    static func transcript(_ messages: [SavedMessage], showAlternatives: Bool) -> String {
+        messages.map { message in
+            var parts = [message.role == "assistant" ? "ChatGPT · 本地副本" : "用户 · 本地副本",
+                         message.state.label + " · " + message.updatedAt.formatted(date: .omitted, time: .shortened)]
+            if message.interruptionReason == "user-stop" {
+                parts.append("观察到用户停止生成；这份副本的完整性未确认。")
+            } else if message.lastObservation == .readFailure || message.lastObservation == .interrupted {
+                parts.append("最近的官方读取失败或采集中断；保留以下已保存正文。")
+            }
+            parts.append(message.body)
+            if let alternative = message.alternativeBody {
+                parts.append("同一消息观察到不同文本，原副本已保留。")
+                if showAlternatives { parts.append("不同文本：\n" + alternative) }
+            }
+            return parts.joined(separator: "\n\n")
+        }.joined(separator: "\n\n────────────────────\n\n")
+    }
+
 }

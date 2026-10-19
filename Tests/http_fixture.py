@@ -1,4 +1,4 @@
-"""Loopback-only synthetic 429 fixture. Never reads or logs request headers."""
+"""Loopback-only synthetic 403/429 fixture. Never reads or logs request headers."""
 import http.server
 import pathlib
 import sys
@@ -6,8 +6,9 @@ import sys
 
 class Fixture(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b'<!doctype html><main><p>Too many requests</p></main>'
-        self.send_response(429)
+        status = 403 if self.path.startswith('/forbidden/') else 429
+        body = b'<!doctype html><main><p>Read unavailable</p></main>'
+        self.send_response(status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()

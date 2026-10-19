@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var workspace: BrowserWorkspace?
+    @State private var dismissedNotice: String?
     private let makeWorkspace: @MainActor () -> BrowserWorkspace
     init(makeWorkspace: @escaping @MainActor () -> BrowserWorkspace = { BrowserWorkspace() }) {
         self.makeWorkspace = makeWorkspace
@@ -24,22 +25,28 @@ struct ContentView: View {
     @ViewBuilder
     private func browser(_ workspace: BrowserWorkspace) -> some View {
         @Bindable var workspace = workspace
-        WebContent(session: workspace.active)
-            .id(workspace.active.id)
+        BrowserDeck(workspace: workspace)
             .frame(minWidth: 640, minHeight: 480)
             .overlay(alignment: .top) {
-                if let error = workspace.active.error ?? workspace.library.warning {
-                    HStack {
-                        Text(error).font(.callout)
-                        Button("Retry") { workspace.active.webView.reload() }
-                        Button("本地副本") { workspace.recover() }
+                if let message = recoveryNotice(workspace) {
+                    let key = workspace.active.id.uuidString + "|" + (workspace.active.conversationID ?? "") + "|" +
+                        String(workspace.active.navigationStarts) + "|" + message
+                    if dismissedNotice != key {
+                        RecoveryNotice(message: message,
+                            retry: { workspace.active.webView.reload() },
+                            recover: { workspace.recover() },
+                            dismiss: { dismissedNotice = key })
+                            .padding(.horizontal, 20).padding(.top, 16)
                     }
-                    .padding().background(.regularMaterial)
-                } else if workspace.active.pageState == .readFailure || workspace.active.pageState == .interrupted {
-                    Button("官方内容暂不可读 · 查看本地副本") { workspace.recover() }
-                        .padding().background(.regularMaterial)
                 }
             }
+            .overlay {
+                if workspace.showingLocal {
+                    LocalConversationView(workspace: workspace)
+                        .id(workspace.localConversation)
+                }
+            }
+            .onChange(of: workspace.library.clearEpoch) { _, _ in workspace.revealOfficial() }
             .focusedSceneValue(\.browserWorkspace, workspace)
             .alert("本地保护状态", isPresented: $workspace.showProtectionStatus) {
                 Button("关闭", role: .cancel) {}
@@ -52,4 +59,13 @@ struct ContentView: View {
                              openOfficial: { workspace.open($0) })
             }
     }
+
+    private func recoveryNotice(_ workspace: BrowserWorkspace) -> String? {
+        if let error = workspace.active.error ?? workspace.library.warning { return error }
+        if workspace.active.pageState == .readFailure || workspace.active.pageState == .interrupted {
+            return "官方内容暂不可读，已保存的回复仍保留在本机。"
+        }
+        return nil
+    }
+
 }

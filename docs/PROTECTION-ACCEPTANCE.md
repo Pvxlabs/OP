@@ -56,7 +56,7 @@ Chrome 因 Cloudflare 验证受阻，未绕过。用户在独立 WKWebView 测�
 真实 Xcode 应用使用隔离验证 bundle ID `local.personal.ChatGPTNative.ProtectionTests`
 和独立产品名；默认网站数据在此测试配置中保持持久，未导入其他客户端 Cookie。
 
-测试仅对会话 `6ad53b9b-28fc-83ee-bc67-e0dedda504c4` 发送合成输入。
+测试仅对会话 `SYNTHETIC_CONVERSATION_A` 发送合成输入。
 验证应用后来被用于工作会话后，停止该实例的自动操作，剩余检测转回固定合成 URL 的
 独立宿主。此前自动重启针对验证实例执行；发现其已被用于工作聊天后不再刷新或重启它。
 没有向工作会话发送合成测试输入。诊断只导出目标测试会话的脱敏元数据。
@@ -65,9 +65,9 @@ Chrome 因 Cloudflare 验证受阻，未绕过。用户在独立 WKWebView 测�
 | --- | --- | --- |
 | 实际身份/角色/正文范围 | PASS | 主 ID、会话选择 ID、assistant 单元；未依赖旧版 author-role 或 .markdown |
 | 网站登录保持 | PASS | 正常退出重启测试宿主及实际隔离 Xcode 应用，重新打开目标会话无登录框 |
-| 实际回复持久保存 | PASS | f95b75a7-1d8a-415f-b239-eccf413c9774，2476 字符，SHA-256 1b338919829ca0ff8ce51dac23742a222f198c2434803949d39a1cb8ae886f2f |
-| 发送下一条后的副本保护 | PASS | 上述副本保留；后续 7fe899e4-afcb-40c1-8768-930bf6eeed73 在最终流式测试全程也保持原指纹 |
-| 实际增量持久化 | PASS | 9ee132f4-e042-410c-be53-cd6548356117，观察到 25 次持久快照，81 -> 1558 字符，streaming -> unverified -> pageEnded |
+| 实际回复持久保存 | PASS | SYNTHETIC_MESSAGE_A，2476 字符，SHA-256 1b338919829ca0ff8ce51dac23742a222f198c2434803949d39a1cb8ae886f2f |
+| 发送下一条后的副本保护 | PASS | 上述副本保留；后续 SYNTHETIC_MESSAGE_B 在最终流式测试全程也保持原指纹 |
+| 实际增量持久化 | PASS | SYNTHETIC_MESSAGE_C，观察到 25 次持久快照，81 -> 1558 字符，streaming -> unverified -> pageEnded |
 | 正常重启后官方正文与本地读回核对 | PASS | 上述消息仍存在；官方 DOM 与 SQLite 的 SHA-256 均为 cd85ba930148e66d67c33121cdaf92688e13d79cf1095147b5eaf8bf152e68c8；1558 字符、重复记录 0、无登录框 |
 | 原始网页消失故障的根因修复 | 未验证 | 本功能为本地防护；未建立或宣称上游故障因果链 |
 | 自动证明生成完整/服务端持久化终态 | BLOCKED | DOM 结束标记不足以证明；保守保存并保持完整性未确认 |

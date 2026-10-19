@@ -10,6 +10,11 @@
   const stable = new Map();
   const sent = new Map();
   const stopped = new Set();
+  // Retain only accepted nodes from the current bounded observation, not all history.
+  const bodyCache = new Map();
+  let mutations;
+
+  const errorSelector = "[role=alert], main h1, main h2, main p";
   const errorText = text => /^(无法加载此回复|无法加载此 ChatGPT 对话|unable to load (this response|conversation)|something went wrong|network error|too many requests|请求过于频繁)([.。！!：:\s]|$)/i.test(text.trim());
   const signature = text => {
     let h = 2166136261;
@@ -21,8 +26,8 @@
     const match = location.pathname.match(/\/c\/([0-9a-f-]+)\/?$/i);
     if (!match || !uuid.test(match[1])) return null; // No fabricated identity for temporary/unknown chats.
     const id = match[1].toLowerCase();
-    if (id !== conversation) { conversation = id; stable.clear(); sent.clear(); stopped.clear(); lastPage = ""; }
-    const now = performance.now(), messages = [], seen = new Set();
+    if (id !== conversation) { conversation = id; stable.clear(); sent.clear(); stopped.clear(); bodyCache.clear(); lastPage = ""; }
+    const now = performance.now(), messages = [], seen = new Set(), cachedNodes = new Set();
     let bytes = 0, needsStableScan = false;
     // Budget newest messages first; an old long message must not starve a new reply.
     const nodes = Array.from(document.querySelectorAll("[data-dil-message-id]")).slice(-500).reverse();
@@ -43,12 +48,19 @@
       const role = "assistant";
       const turn = node.closest("[data-talvt-turn-state]");
       // Capture response text, not thinking/tool cards, buttons or the global live region.
-      const bodyNode = node;
-      const text = bodyNode?.innerText?.trim() || "";
-      const size = new TextEncoder().encode(text).length;
+      let body = bodyCache.get(node);
+      if (!body) {
+        const text = node.innerText?.trim() || "";
+        body = {text, size: new TextEncoder().encode(text).length, hash: signature(text)};
+      }
+      const {text, size, hash} = body;
       if (size > 1024 * 1024 || bytes + size > 2 * 1024 * 1024 || messages.length >= 500) continue;
+      if (body.visibleError === undefined) {
+        body.visibleError = Array.from(node.querySelectorAll(errorSelector)).some(n => errorText(n.innerText || ""));
+      }
+      bodyCache.set(node, body); cachedNodes.add(node);
       bytes += size;
-      const key = messageID.toLowerCase(), hash = signature(text), old = stable.get(key);
+      const key = messageID.toLowerCase(), old = stable.get(key);
       if (!old || old.hash !== hash) stable.set(key, {hash, since: now});
       const settled = now - stable.get(key).since >= 1500;
       const turnState = turn?.getAttribute("data-talvt-turn-state");
@@ -66,10 +78,24 @@
       messages.push({id: key, role, body: state === "readFailure" ? "" : text, state, evidence});
       seen.add(key);
     }
+    for (const node of bodyCache.keys()) if (!cachedNodes.has(node)) bodyCache.delete(node);
     for (const key of stable.keys()) if (!seen.has(key)) stable.delete(key);
     for (const key of stopped) if (!seen.has(key)) stopped.delete(key);
-    const readFailure = messages.some(m => m.role === "assistant" && m.state === "readFailure") || Array.from(document.querySelectorAll("[role=alert], main h1, main h2, main p"))
-      .some(n => errorText(n.innerText || ""));
+    // Live-observed conversation errors may be role-less divs rather than alerts.
+    // Require the exact error line plus the site's retry action, and no identified
+    // messages. Do not classify arbitrary quoted error text in a normal reply.
+    const conversationReadError = !messages.length && Array.from(document.querySelectorAll("button"))
+      .some(n => /^(再试一次|Try again)$/i.test((n.innerText || "").trim())) &&
+      (document.body?.innerText || "").split("\n").some(line =>
+        /^(无法加载此\s*ChatGPT\s*对话|unable to load conversation)[。.!\s]*$/i.test(line.trim()));
+    const cachedError = Array.from(bodyCache.values()).some(body => body.visibleError);
+    const readFailure = conversationReadError || cachedError || messages.some(m => m.role === "assistant" && m.state === "readFailure") ||
+      Array.from(document.querySelectorAll(errorSelector)).some(n => {
+        const owner = n.closest("[data-dil-message-id]");
+        // Rendered error checks within unchanged accepted bodies were already cached.
+        // Unidentified/global errors still use the full original visible-text check.
+        return !(owner && cachedNodes.has(owner)) && errorText(n.innerText || "");
+      });
     if (needsStableScan) schedule(1600);
     return {schema: 1, documentID, sequence: ++sequence, conversationID: id,
       pageState: interrupted ? "interrupted" : readFailure ? "readFailure" : messages.length ? "unverified" : "unavailable", messages: messages.reverse()};
@@ -77,12 +103,18 @@
   async function scan(interrupted = false) {
     if (!captureEnabled) return;
     if (pending) { dirty = true; return; }
+    // A pre-send/native flush can run before MutationObserver's microtask delivery.
+    consumeMutations(mutations?.takeRecords() || []);
     const batch = collect(interrupted);
     if (!batch) return;
     const all = batch.messages;
-    const encoded = new Map(all.map(m => [m.id, JSON.stringify(m)]));
+    const encoded = new Map(all.map(m => [m.id, m]));
     batch.order = all.map(m => m.id);
-    batch.messages = all.filter(m => sent.get(m.id) !== encoded.get(m.id));
+    batch.messages = all.filter(m => {
+      const previous = sent.get(m.id);
+      return !previous || previous.body !== m.body || previous.role !== m.role ||
+        previous.state !== m.state || previous.evidence !== m.evidence;
+    });
     const page = batch.conversationID + ":" + batch.pageState;
     if (!batch.messages.length && page === lastPage) return;
     pending = true;
@@ -103,9 +135,44 @@
     timerDue = due;
     timer = setTimeout(() => { timer = 0; scan(); }, delay);
   }
-  new MutationObserver(() => schedule()).observe(document.documentElement,
+  const captureRegion = "[data-dil-message-id],[data-content-search-unit-key],[data-chatgpt-selection-conversation-id],[data-talvt-turn-state],[role=alert],main";
+  function relevantNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) return errorText(node.data || "");
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    // Include identity arrival/removal, global errors, and retry controls. The
+    // route watcher and pre-send/stop/pagehide flush remain independent of this filter.
+    return node.matches(captureRegion + ",p,h1,h2,button") ||
+      Boolean(node.querySelector(captureRegion + ",p,h1,h2,button")) ||
+      (!node.childElementCount && errorText(node.textContent || ""));
+  }
+  function consumeMutations(records) {
+    let relevant = false;
+    for (const record of records) {
+      const target = record.target.nodeType === Node.ELEMENT_NODE ? record.target : record.target.parentElement;
+      const containing = target?.closest("[data-dil-message-id]");
+      if (containing) bodyCache.delete(containing);
+      const renderingAttribute = record.type === "attributes" && ["class", "style", "hidden"].includes(record.attributeName);
+      // Reparenting/removal and ancestor visibility changes can alter rendered text
+      // without changing textContent. Invalidate those cached bodies conservatively.
+      const changedTrees = renderingAttribute ? [target] : [...(record.addedNodes || []), ...(record.removedNodes || [])];
+      let invalidated = false;
+      for (const tree of changedTrees) {
+        if (tree?.nodeType !== Node.ELEMENT_NODE) continue;
+        for (const node of bodyCache.keys()) if (tree.contains(node)) { bodyCache.delete(node); invalidated = true; }
+      }
+      if (record.type === "attributes" && !renderingAttribute) relevant = true;
+      else if (invalidated || target?.closest(captureRegion)) relevant = true;
+      else if (record.type === "characterData") relevant ||= errorText(record.target.data || "");
+      else if (record.type === "childList") relevant ||= changedTrees.some(relevantNode);
+    }
+    return relevant;
+  }
+  mutations = new MutationObserver(records => {
+    if (captureEnabled && consumeMutations(records)) schedule();
+  });
+  mutations.observe(document.documentElement,
     {subtree: true, childList: true, characterData: true, attributes: true,
-      attributeFilter: ["data-talvt-turn-state", "data-dil-message-id", "aria-busy",
+      attributeFilter: ["data-talvt-turn-state", "data-dil-message-id", "aria-busy", "class", "style", "hidden", "role",
         "data-chatgpt-selection-message-id", "data-chatgpt-selection-conversation-id",
         "data-content-search-unit-key", "data-chatgpt-search-message-ids"]});
   // Capture before the site's handlers run, without changing or intercepting the send.
@@ -130,6 +197,7 @@
     lastPage = "";
     sent.clear();
     stable.clear();
+    bodyCache.clear();
     if (captureEnabled) scan();
   };
   scan();

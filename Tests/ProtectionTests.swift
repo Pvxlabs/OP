@@ -12,12 +12,13 @@ private let completeText = String(repeating: "Synthetic protected response. 中�
 private final class FixtureHandler: NSObject, WKURLSchemeHandler {
     var requests = 0
     var status = 200
+    var includeBody = true
     func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
         requests += 1
         let conversation = urlSchemeTask.request.url!.lastPathComponent
         let html = """
         <!doctype html><meta charset="utf-8"><title>Reply Protection Synthetic Fixture</title>
-        <main><article data-talvt-turn-state="complete"><div data-content-search-unit-key="fallback-turn-0:1:assistant" data-chatgpt-search-message-ids="\(messageA) \(messageA)"><div data-chatgpt-selection-conversation-id="\(conversation)" data-chatgpt-selection-message-id="\(messageA)"><div data-dil-message-id="\(messageA)" class="synthetic-body"><pre>\(completeText)</pre></div></div></div></article></main>
+        <main><article data-talvt-turn-state="complete"><div data-content-search-unit-key="fallback-turn-0:1:assistant" data-chatgpt-search-message-ids="\(messageA) \(messageA)"><div data-chatgpt-selection-conversation-id="\(conversation)" data-chatgpt-selection-message-id="\(messageA)"><div data-dil-message-id="\(messageA)" class="synthetic-body"><pre>\(includeBody ? completeText : "")</pre></div></div></div></article></main>
         <span role="status" aria-live="polite">回答已完成</span>
         """
         let data = Data(html.utf8)
@@ -167,6 +168,32 @@ private final class Suite {
         try check(session.observerAvailable && view.configuration.websiteDataStore.isPersistent, "public isolated-world bridge and persistent website store")
         let first = try await store.messages(in: conversationA)[0]
         try check(first.body == completeText.trimmingCharacters(in: .whitespacesAndNewlines), "real WebKit DOM captured full synthetic body")
+        _ = try await view.callAsyncJavaScript("""
+            document.querySelector('.synthetic-body').innerHTML='<p>SYNTHETIC_CACHE_DELTA<span style="display:none">_VISIBLE</span></p>';
+            await __nativeSnapshotScan();
+            """, arguments: [:], in: nil, contentWorld: MessageObserver.world)
+        try await wait { try await store.messages(in: conversationA).first?.alternativeBody == "SYNTHETIC_CACHE_DELTA" }
+        try check(true, "pre-send flush drains pending DOM records before using body cache")
+        _ = try await view.callAsyncJavaScript("""
+            document.querySelector('.synthetic-body span').style.display='inline';
+            await __nativeSnapshotScan();
+            """, arguments: [:], in: nil, contentWorld: MessageObserver.world)
+        try await wait { try await store.messages(in: conversationA).first?.alternativeBody == "SYNTHETIC_CACHE_DELTA_VISIBLE" }
+        try check(true, "rendered visibility changes invalidate cached text even without textContent changes")
+        _ = try await view.callAsyncJavaScript("""
+            const old=document.querySelector('.synthetic-body'),replacement=old.cloneNode(false);
+            replacement.textContent='SYNTHETIC_REPLACED_NODE';old.replaceWith(replacement);
+            await __nativeSnapshotScan();
+            """, arguments: [:], in: nil, contentWorld: MessageObserver.world)
+        try await wait { try await store.messages(in: conversationA).first?.alternativeBody == "SYNTHETIC_REPLACED_NODE" }
+        try check(true, "replacement node with the same message identity cannot reuse stale rendered text")
+        _ = try await view.callAsyncJavaScript("""
+            document.querySelector('.synthetic-body').innerHTML='<p>Normal heading</p><p><span style="display:none">hidden prefix</span>Too many requests</p>';
+            await __nativeSnapshotScan();
+            """, arguments: [:], in: nil, contentWorld: MessageObserver.world)
+        try await wait { session.pageState == .readFailure }
+        try check(try await store.messages(in: conversationA).first?.fingerprint == first.fingerprint,
+                  "cached paragraph error detection preserves visible errors with hidden raw-text prefixes")
         _ = try await view.evaluateJavaScript("let f=document.createElement('iframe'); f.src='snapshot-fixture://local/c/99999999-9999-4999-8999-999999999999'; document.body.append(f)")
         try await wait { (try await view.evaluateJavaScript("document.querySelector('iframe').contentDocument?.readyState==='complete'") as? Bool) == true }
         try check(try await store.messages(in: "99999999-9999-4999-8999-999999999999").isEmpty, "subframe fixture is not captured")
@@ -176,6 +203,12 @@ private final class Suite {
         _ = try await view.evaluateJavaScript("document.querySelector('main').innerHTML='<p>Too many requests</p>'")
         try await wait { session.pageState == .readFailure }
         try check(try await store.messages(in: conversationA).first?.body == first.body, "synthetic read failure with no nodes preserves body")
+        _ = try await view.evaluateJavaScript("document.querySelector('main').innerHTML=''")
+        try await wait { session.pageState == .unavailable }
+        _ = try await view.evaluateJavaScript("document.querySelector('main').innerHTML='<div><div>无法加载此 ChatGPT 对话</div><button>再试一次</button></div>'")
+        try await wait { session.pageState == .readFailure }
+        try check(try await store.messages(in: conversationA).first?.body == first.body,
+                  "role-less conversation error is recorded without overwriting saved reply")
         handler.status = 429
         view.reload()
         try await wait { handler.requests >= 2 && session.navigationFinishes >= 2 }
@@ -189,6 +222,13 @@ private final class Suite {
         try check(httpSession.pageState == .readFailure && afterHTTPFailure.first?.body == first.body,
                   "real loopback HTTP 429 observed by public navigation delegate preserves saved body")
         metrics["observedLoopbackHTTPStatus"] = Double(httpSession.lastHTTPStatus!)
+        let forbiddenSession = BrowserSession(loadHome: false, library: library)
+        forbiddenSession.startOnce(at: URL(string: "http://127.0.0.1:\(port)/forbidden/c/\(conversationA)")!)
+        try await wait { forbiddenSession.lastHTTPStatus == 403 && forbiddenSession.navigationFinishes == 1 }
+        let afterForbidden = try await store.messages(in: conversationA)
+        try check(forbiddenSession.pageState == .readFailure && afterForbidden.first?.body == first.body,
+                  "real loopback HTTP 403 preserves existing protected body")
+        forbiddenSession.retire()
         httpSession.retire()
 
         // A global completion announcement + explicit in-progress turn cannot complete a stream.
@@ -267,6 +307,39 @@ private final class Suite {
         pool.close()
         try check(pool.sessions.isEmpty, "window close releases retained sessions")
         metrics["maxRetainedViewsPerWindow"] = 3
+        let longReply = String(repeating: "SYNTHETIC selectable cached reply 中文正文\n", count: 1200)
+        let textHost = NSHostingView(rootView: CachedReplyText(text: longReply))
+        window?.contentView = textHost
+        textHost.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        func findText(_ view: NSView) -> NSTextView? {
+            if let text = view as? NSTextView { return text }
+            for child in view.subviews { if let text = findText(child) { return text } }
+            return nil
+        }
+        let cachedText = findText(textHost)
+        cachedText?.setSelectedRange(NSRange(location: 10, length: 12))
+        textHost.rootView = CachedReplyText(text: longReply)
+        try await Task.sleep(for: .milliseconds(100))
+        try check(cachedText?.string == longReply && cachedText?.isEditable == false &&
+                  cachedText?.isSelectable == true && cachedText?.selectedRange() == NSRange(location: 10, length: 12),
+                  "long native cached transcript remains responsive and preserves selection on rebuild")
+        let recoveryMessages = [SavedMessage(id: messageA, role: "assistant", body: longReply,
+            fingerprint: SavedMessage.hash(longReply), state: .interrupted, lastObservation: .readFailure,
+            evidence: nil, alternativeBody: "ALTERNATIVE_SYNTHETIC", interruptionReason: "user-stop",
+            firstSeen: Date(), updatedAt: Date(), order: 0)]
+        let normalTranscript = RecoveryView.transcript(recoveryMessages, showAlternatives: false)
+        let expandedTranscript = RecoveryView.transcript(recoveryMessages, showAlternatives: true)
+        try check(normalTranscript.contains(longReply) && normalTranscript.contains("观察到用户停止生成") &&
+                  normalTranscript.contains(ReplyState.interrupted.label) && !normalTranscript.contains("ALTERNATIVE_SYNTHETIC") &&
+                  expandedTranscript.contains("ALTERNATIVE_SYNTHETIC"),
+                  "native recovery preserves body, incomplete state, stop reason and optional conflict text")
+        let recoveryHost = NSHostingView(rootView: RecoveryView(library: library,
+            conversationID: .constant(conversationA), openOfficial: { _ in }))
+        window?.contentView = recoveryHost
+        try await Task.sleep(for: .milliseconds(200))
+        try check(findText(recoveryHost)?.isSelectable == true && findText(recoveryHost)?.isEditable == false,
+                  "full manual recovery uses the native selectable text system")
         await library.clear()
         let clearedRecent = try await store.recent()
         try check(!library.enabled && clearedRecent.isEmpty, "clear pauses recapture without touching website data")
@@ -308,7 +381,11 @@ private final class Suite {
         let firstWindow = makeWindowWorkspace()
         await firstWindow.start()
         try await wait { firstWindow.active.navigationFinishes == 1 }
-        try check(firstWindow.showRecovery && firstWindow.active.matches(conversationA), "first window restores recent local conversation")
+        let startupSaved = await startupLibrary.messages(conversationA)
+        try check(!firstWindow.showRecovery && !firstWindow.showingLocal && firstWindow.localMessages.isEmpty &&
+                  firstWindow.active.matches(conversationA) && startupSaved.first?.body == "Startup snapshot" &&
+                  firstWindow.metrics.events.contains { $0.name == "restartSilent" },
+                  "startup silently restores website with no local preview or manager and retains saved replies")
         firstWindow.showRecovery = false
         var ownerCreations = 0
         let createOwner: @MainActor () -> BrowserWorkspace = { ownerCreations += 1; return firstWindow }
@@ -324,6 +401,80 @@ private final class Suite {
         try check(!secondWindow.showRecovery && secondWindow.active.webView.url?.path == "/", "additional window starts home without reopening recent conversation")
         firstWindow.close()
         secondWindow.close()
+
+        let transitionStore = try newStore("transition")
+        try await transitionStore.ingest(batch(1, body: "TARGET_A", state: .complete))
+        try await transitionStore.ingest(batch(2, body: "TARGET_B", state: .complete, conversation: b.id))
+        let transitionLibrary = SnapshotLibrary(store: transitionStore, preferences: nil)
+        let blankHandler = FixtureHandler()
+        blankHandler.includeBody = false
+        let transition = BrowserWorkspace(library: transitionLibrary, factory: {
+            let config = WKWebViewConfiguration()
+            config.setURLSchemeHandler(blankHandler, forURLScheme: "snapshot-fixture")
+            return BrowserSession(configuration: config, loadHome: false, library: transitionLibrary, allowFixtures: true)
+        }, conversationURL: { URL(string: "snapshot-fixture://local/c/\($0.id)")! },
+           homeURL: URL(string: "snapshot-fixture://local/")!)
+        let transitionHost = NSHostingView(rootView: ContentView(makeWorkspace: {transition}))
+        window?.contentView = transitionHost
+        try await Task.sleep(for: .milliseconds(100))
+        transition.open(a)
+        let pendingA = transition.active
+        let creationCount = transition.sessions.count
+        for _ in 0..<10 { transition.open(a) }
+        try check(transition.active === pendingA && transition.sessions.count == creationCount && pendingA.webView.explicitLoads == 1,
+                  "repeated selection before navigation commit reuses one pending view")
+        transition.open(b)
+        try await wait { transition.localConversation == b.id && transition.localMessages.first?.body == "TARGET_B" }
+        try check(transition.localMessages.allSatisfy { $0.body != "TARGET_A" } && transition.showingLocal,
+                  "rapid cold selection shows only matching target snapshot")
+        // Page state arrives before the awaited SQLite receive finishes. Wait for
+        // the workspace callback phase, then keep the original content assertions.
+        try await wait { transition.active.pageState == .readFailure && transition.syncState == "loadFailed" }
+        try check(transition.showingLocal && transition.syncState == "loadFailed" && transition.localMessages.first?.body == "TARGET_B",
+                  "unreadable official DOM retains target native recovery")
+        _ = try await transition.active.webView.evaluateJavaScript("document.querySelector('.synthetic-body').textContent='TARGET_B'")
+        try await wait { !transition.showingLocal && transition.syncState == "officialReadable" }
+        try check(transition.active.matches(b.id) && transition.active.readableConversationID == b.id,
+                  "handoff waits for matching conversation and validated nonempty message")
+        let mounts = transition.active.webView.attachmentCount
+        let requests = blankHandler.requests
+        transition.open(a)
+        try await wait { transition.localMessages.first?.body == "TARGET_A" }
+        transition.open(b)
+        try await Task.sleep(for: .milliseconds(100))
+        try check(transition.active.webView.attachmentCount == mounts && blankHandler.requests == requests,
+                  "warm switch in full ContentView preserves mount and adds zero requests")
+        weak var pressureVictim = transition.sessions.first { $0 !== transition.active && $0 !== pendingA }
+        let activeBeforePressure = transition.active
+        transition.trimInactiveSessions()
+        try await Task.sleep(for: .milliseconds(100))
+        try check(transition.sessions.count == 1 && transition.active === activeBeforePressure && pressureVictim == nil,
+                  "pressure releases inactive sessions and preserves active work")
+        transition.open(a)
+        try await wait { transition.localMessages.first?.body == "TARGET_A" }
+        await transitionLibrary.clear()
+        try await Task.sleep(for: .milliseconds(100))
+        try check(!transition.showingLocal && transition.localMessages.isEmpty,
+                  "clearing snapshots also removes the inline in-memory presentation")
+        var peak = 0
+        for index in 1...16 {
+            let id = String(format: "%08d-5555-4555-8555-555555555555", index)
+            transition.open(ConversationSummary(id: id, updatedAt: Date(), messageCount: 0))
+            peak = max(peak, transition.sessions.count)
+            if index.isMultiple(of: 4) { transition.trimInactiveSessions() }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        try check(peak <= 3 && transition.sessions.count == 1,
+                  "repeated cold selections and pressure trims remain bounded")
+        transition.open(a)
+        let departed = transition.active
+        try await wait { departed.matches(a.id) }
+        departed.webView.load(URLRequest(url: URL(string: "snapshot-fixture://local/c/\(b.id)")!))
+        try await wait { departed.matches(b.id) }
+        transition.open(a)
+        try check(transition.active !== departed && transition.localConversation == a.id,
+                  "pending identity cannot reuse a view that navigated to another conversation")
+        transition.close()
         window?.close()
     }
 
@@ -340,22 +491,25 @@ private final class Suite {
         try check((attributes[.posixPermissions] as? Int) == 0o600, "database permissions owner read-write only")
     }
 
-    func preview(website: Bool) async throws {
+    func preview(website: Bool, long: Bool = false) async throws {
         let store = try newStore(website ? "website-preview" : "ui-preview")
         let library = SnapshotLibrary(store: store, preferences: nil)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window?.isReleasedWhenClosed = false
         if website {
+            guard let liveID = ProcessInfo.processInfo.environment["OP_TEST_CONVERSATION_ID"], SnapshotIdentity.valid(liveID) else {
+                throw NSError(domain: "ProtectionTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Set OP_TEST_CONVERSATION_ID to an independent synthetic conversation UUID"])
+            }
             let session = BrowserSession(loadHome: false, library: library)
             previewSession = session
             window?.title = "Reply Protection — Official Synthetic Conversation"
             window?.contentView = session.webView
-            session.startOnce(at: URL(string: "https://chatgpt.com/c/6ad53b9b-28fc-83ee-bc67-e0dedda504c4")!)
+            session.startOnce(at: URL(string: "https://chatgpt.com/c/" + liveID)!)
             Task { @MainActor [weak self, weak session] in
                 for _ in 0..<180 {
                     guard let self, let session else { return }
-                    guard session.webView.url?.path == "/c/6ad53b9b-28fc-83ee-bc67-e0dedda504c4" else {
+                    guard session.webView.url?.path == "/c/" + liveID else {
                         try? await Task.sleep(for: .seconds(2))
                         continue
                     }
@@ -391,14 +545,103 @@ private final class Suite {
         } else {
             try await store.ingest(batch(1, body: "SYNTHETIC LOCAL RECOVERY\n\nThis complete reply survived a simulated read failure.\n\n中文本地恢复视图验证：副本明确标记，不覆盖官方网站。", state: .complete))
             try await store.ingest(batch(2, body: "", state: .readFailure, page: .readFailure))
+            if long {
+                for index in 1...8 {
+                    let id = String(format: "%08d-2222-4222-8222-222222222222", index)
+                    let body = String(repeating: "SYNTHETIC REPLAY STRESS \(index) — 可选择的本地长正文，保持滚动和复制。\n", count: 180)
+                    try await store.ingest(batch(index * 2 + 2, body: body, state: .complete, id: id))
+                    if index == 1 {
+                        try await store.ingest(batch(5, body: body + "SYNTHETIC ALTERNATIVE", state: .complete, id: id))
+                    }
+                }
+            }
+            if long { try check(try await store.messages(in: conversationA).count == 9, "long recovery fixture contains all nine synthetic messages") }
             await library.refresh()
             window?.title = "Reply Protection — Local Recovery UI"
-            window?.contentView = NSHostingView(rootView: RecoveryView(library: library,
-                conversationID: .constant(conversationA), openOfficial: { _ in }))
+            if long {
+                let handler = FixtureHandler()
+                handler.includeBody = false
+                let workspace = BrowserWorkspace(library: library, factory: {
+                    let config = WKWebViewConfiguration()
+                    config.setURLSchemeHandler(handler, forURLScheme: "snapshot-fixture")
+                    return BrowserSession(configuration: config, loadHome: false, library: library, allowFixtures: true)
+                }, conversationURL: { URL(string: "snapshot-fixture://local/c/\($0.id)")! },
+                   homeURL: URL(string: "snapshot-fixture://local/")!)
+                window?.contentView = NSHostingView(rootView: ContentView(makeWorkspace: { workspace }))
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    workspace.recover()
+                }
+            } else {
+                window?.contentView = NSHostingView(rootView: RecoveryView(library: library,
+                    conversationID: .constant(conversationA), openOfficial: { _ in }))
+            }
         }
         window?.center()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        if long {
+            let began = ProcessInfo.processInfo.systemUptime
+            Task { @MainActor in
+                var last = began, maximumGap = 0.0
+                for tick in 1...60 {
+                    try? await Task.sleep(for: .seconds(1))
+                    let now = ProcessInfo.processInfo.systemUptime
+                    maximumGap = max(maximumGap, now - last)
+                    last = now
+                    let metadata: [String: Any] = ["ticks": tick, "elapsedSeconds": now - began,
+                        "maximumHeartbeatGapSeconds": maximumGap, "syntheticMessages": 9]
+                    if let data = try? JSONSerialization.data(withJSONObject: metadata, options: .prettyPrinted) {
+                        try? data.write(to: self.directory.appendingPathComponent("ui-heartbeat.json"), options: .atomic)
+                    }
+                }
+            }
+        }
+    }
+    func notice(dark: Bool, silent: Bool = false) async throws {
+        let store = try newStore("notice")
+        try await store.ingest(batch(1, body: "SYNTHETIC_NOTICE_REPLY — 已保存的本地副本", state: .complete))
+        let library = SnapshotLibrary(store: store, preferences: nil)
+        let handler = FixtureHandler()
+        handler.includeBody = silent
+        let workspace = BrowserWorkspace(library: library, factory: {
+            let config = WKWebViewConfiguration()
+            config.setURLSchemeHandler(handler, forURLScheme: "snapshot-fixture")
+            return BrowserSession(configuration: config, loadHome: false, library: library, allowFixtures: true)
+        }, conversationURL: { URL(string: "snapshot-fixture://local/c/\($0.id)")! },
+           homeURL: URL(string: "snapshot-fixture://local/c/\(conversationA)")!)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window?.isReleasedWhenClosed = false
+        window?.title = "Reply Protection — Rounded Notice Validation"
+        window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window?.contentView = NSHostingView(rootView: ContentView(makeWorkspace: { workspace }))
+        window?.center(); window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        try await wait { workspace.active.navigationFinishes > 0 }
+        // UI-only fault injection; real HTTP 403/429 protection is covered by the loopback tests.
+        if !silent {
+            workspace.active.error = "官方内容暂不可读。已保存的回复仍保留在本机。"
+            workspace.active.pageState = .readFailure
+            workspace.revealOfficial()
+        }
+        if let image = NSApp.applicationIconImage, let data = image.tiffRepresentation,
+           let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) {
+            try png.write(to: directory.appendingPathComponent("loaded-app-icon.png"))
+        }
+        Task { @MainActor in
+            for _ in 0..<60 {
+                let protected = await library.messages(conversationA)
+                let metadata: [String: Any] = ["status": workspace.active.pageState.rawValue,
+                    "httpStatus": workspace.active.lastHTTPStatus ?? 0,
+                    "errorRetained": workspace.active.error != nil,
+                    "protectedBodyRetained": protected.first?.body == "SYNTHETIC_NOTICE_REPLY — 已保存的本地副本",
+                    "recoverySheetOpen": workspace.showRecovery, "localPreviewVisible": workspace.showingLocal, "dark": dark]
+                if let data = try? JSONSerialization.data(withJSONObject: metadata, options: .prettyPrinted) {
+                    try? data.write(to: self.directory.appendingPathComponent("notice-state.json"), options: .atomic)
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
     var previewSession: BrowserSession?
 
@@ -429,8 +672,12 @@ struct ProtectionTestMain {
         let suite = Suite(directory: URL(fileURLWithPath: arguments[2], isDirectory: true))
         Task { @MainActor in
             do {
-                if phase == "preview" || phase == "website" {
-                    try await suite.preview(website: phase == "website")
+                if phase == "notice" || phase == "notice-dark" || phase == "startup" {
+                    try await suite.notice(dark: phase == "notice-dark", silent: phase == "startup")
+                    return
+                }
+                if phase == "preview" || phase == "website" || phase == "stress" {
+                    try await suite.preview(website: phase == "website", long: phase == "stress")
                     return
                 }
                 if phase == "core" { try await suite.core(); try await suite.webkit() }

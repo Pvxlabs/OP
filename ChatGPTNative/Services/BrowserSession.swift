@@ -4,6 +4,20 @@ import OSLog
 
 @MainActor
 final class BrowserView: WKWebView {
+    static var totalAttachments = 0
+    static var totalExplicitLoads = 0
+    private(set) var attachmentCount = 0
+    private(set) var lastAttachedAt = ProcessInfo.processInfo.systemUptime
+    private(set) var explicitLoads = 0
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { Self.totalAttachments += 1; attachmentCount += 1; lastAttachedAt = ProcessInfo.processInfo.systemUptime }
+    }
+    @discardableResult override func load(_ request: URLRequest) -> WKNavigation? {
+        explicitLoads += 1
+        Self.totalExplicitLoads += 1
+        return super.load(request)
+    }
     @objc func reloadPage() { reload() }
     @objc func backPage() { goBack() }
     @objc func forwardPage() { goForward() }
@@ -25,8 +39,11 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
     var lastLoadMilliseconds: Double?
     var lastHTTPStatus: Int?
     var observerAvailable = false
+    private(set) var readableConversationID: String?
+    var didObserveContent: (() -> Void)?
     private var navigationBegan: ContinuousClock.Instant?
     private var started = false
+    private(set) var pendingConversationID: String?
     private var retired = false
     private let library: SnapshotLibrary
     private let observer: MessageObserver?
@@ -53,7 +70,17 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
             guard let self, !self.retired else { return false }
             self.conversationID = batch.conversationID
             self.pageState = batch.pageState
-            return await self.library.receive(batch)
+            let saved = await self.library.receive(batch)
+            if batch.messages.contains(where: {
+                SnapshotIdentity.valid($0.id) && $0.role == "assistant" &&
+                !$0.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !SnapshotIdentity.isErrorText($0.body) && $0.state != .readFailure
+            }), self.matches(batch.conversationID) {
+                self.readableConversationID = batch.conversationID
+                self.pendingConversationID = nil
+            }
+            self.didObserveContent?()
+            return saved
         }
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -69,6 +96,8 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
         guard !started, !retired else { return }
         started = true
         conversationID = SnapshotIdentity.conversation(in: url)
+        pendingConversationID = conversationID
+        if allowFixtures { pendingConversationID = url.lastPathComponent.lowercased() }
         webView.load(URLRequest(url: url))
     }
     func matches(_ conversation: String) -> Bool {
@@ -82,7 +111,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
         if let official = SnapshotIdentity.conversation(in: webView.url) { conversationID = official }
         else if allowFixtures, let value = webView.url?.lastPathComponent, SnapshotIdentity.valid(value) { conversationID = value.lowercased() }
         else { conversationID = nil }
-        if previous != conversationID { library.interrupt(previous); pageState = .unavailable }
+        if previous != conversationID { library.interrupt(previous); pageState = .unavailable; readableConversationID = nil }
     }
     private func watchCapturePreference() {
         guard !retired, observer != nil else { return }
@@ -108,6 +137,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
                                                                                   contentWorld: MessageObserver.world)
         }
         observer?.receive = nil
+        didObserveContent = nil
         locationObservation = nil
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -117,6 +147,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
         error = nil
         library.interrupt(conversationID)
         pageState = .unavailable
+        readableConversationID = nil
         navigationStarts += 1
         navigationBegan = .now
         logger.info("navigation started")
@@ -138,6 +169,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
         library.interrupt(conversationID)
         pageState = .interrupted
         error = "Web content process stopped. Reload to continue."
+        didObserveContent?()
         logger.error("web content process terminated")
     }
     private func record(_ failure: Error) {
@@ -145,6 +177,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
         guard code != NSURLErrorCancelled else { return }
         error = failure.localizedDescription
         pageState = .readFailure
+        didObserveContent?()
         logger.error("operation failed code=\(code)")
     }
 
@@ -169,6 +202,7 @@ final class BrowserSession: NSObject, WKNavigationDelegate, WKUIDelegate, WKDown
             if response.statusCode >= 400 {
                 pageState = .readFailure
                 error = "官方网页读取失败（HTTP \(response.statusCode)）。可查看本地副本。"
+                didObserveContent?()
             }
         }
         decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)

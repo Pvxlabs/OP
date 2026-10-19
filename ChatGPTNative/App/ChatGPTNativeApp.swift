@@ -6,10 +6,10 @@ import UserNotifications
 struct ChatGPTNativeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     var body: some Scene {
-        WindowGroup("ChatGPT Native", id: "chat") { ContentView() }
+        WindowGroup("OP", id: "chat") { ContentView() }
             .defaultSize(width: 1180, height: 820)
             .commands { BrowserCommands() }
-        MenuBarExtra("ChatGPT Native", systemImage: "bubble.left.and.bubble.right") { QuickLaunchMenu() }
+        MenuBarExtra("OP", systemImage: "bubble.left.and.bubble.right") { QuickLaunchMenu() }
     }
 }
 
@@ -26,8 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct QuickLaunchMenu: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Button("Open ChatGPT") {
-            if let window = NSApp.windows.first(where: { $0.canBecomeKey && $0.title == "ChatGPT Native" }) {
+        Button("Open OP") {
+            if let window = NSApp.windows.first(where: { $0.canBecomeKey && $0.title == "OP" }) {
                 window.deminiaturize(nil)
                 window.makeKeyAndOrderFront(nil)
             } else { openWindow(id: "chat") }
@@ -35,7 +35,7 @@ struct QuickLaunchMenu: View {
         }
         Button("New Window") { openWindow(id: "chat"); NSApp.activate(ignoringOtherApps: true) }
         Divider()
-        Button("Quit ChatGPT Native") { NSApp.terminate(nil) }
+        Button("Quit OP") { NSApp.terminate(nil) }
     }
 }
 

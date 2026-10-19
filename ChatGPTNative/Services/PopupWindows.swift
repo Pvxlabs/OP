@@ -12,7 +12,7 @@ final class PopupWindows: NSObject, NSWindowDelegate {
         let session = BrowserSession(configuration: configuration, loadHome: false, observeMessages: false)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "ChatGPT Native — Web Window"
+        window.title = "OP — Web Window"
         window.isReleasedWhenClosed = false
         window.contentView = session.webView
         window.delegate = self
