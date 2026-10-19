@@ -116,3 +116,17 @@ Do not package the optional CEF Alerts helper: its automatic macOS registration
 recreates a separate unwanted notification entry. Keep native OP notifications
 and the generic/GPU/renderer browser helpers. Remove stale Alerts output before
 signing incremental builds.
+
+## Light header follows approved night layout — 2026-10-20
+
+Apply the existing night geometry, traffic-light positions, title baseline/font,
+collect/refresh glyphs and focus behavior to light mode. Keep the existing light
+background and active foreground palette. In both appearances, inactive windows
+show a muted #6E6E6E title and hide right icons; hover surfaces retain 4 pt corners.
+Do not change approved night geometry or website content/styles.
+
+The owner subsequently authorized completing validation directly on Air because
+iMac remains locked. Inspect light/night focused, unfocused and hover header
+renders on Air before installing, then verify the installed window. Finish by
+closing isolated processes/listeners and unregistering review app copies.
+Preserve production data, notification preferences and a rollback app bundle.

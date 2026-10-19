@@ -49,7 +49,7 @@ File dialogs and clipboard use normal Chromium/AppKit handling; downloads explic
 
 ## Native header
 
-Native icon-only query and refresh controls sit at top right. Header styling follows the owner-edited Figma “02 你的调整区” in file `xWHKogXYl3WijpAvXxn7MP`: bundled 13 pt Inter Bold and exact exported vector glyphs, 40 pt titlebar, night #1C1C1C / #A1A1AA, hover #2E2E2E with 4 pt corners and 32 x 30 pt bounds. Night inactive uses #6E6E6E title and hides both right icons as drawn. Light active remains #F9F9F9 / #313131 with the original tray glyph. Native traffic-light and title/button positions follow the exported coordinates; full-screen controls remain system-managed. See [the exact contract](../../docs/CEF-INTEGRATION-SPEC.md).
+Native icon-only query and refresh controls sit at top right. Header styling follows the owner-edited Figma “02 你的调整区” in file `xWHKogXYl3WijpAvXxn7MP`: bundled 13 pt Inter Bold and exact exported vector glyphs, 40 pt titlebar, night #1C1C1C / #A1A1AA, hover #2E2E2E with 4 pt corners and 32 x 30 pt bounds. Night inactive uses #6E6E6E title and hides both right icons as drawn. Light active remains #F9F9F9 / #313131 and uses the same glyphs and geometry as night mode. Native traffic-light and title/button positions follow the exported coordinates; full-screen controls remain system-managed. See [the exact contract](../../docs/CEF-INTEGRATION-SPEC.md).
 
 The query button sends a fixed execution-status message in the current ordinary ChatGPT conversation; ChatGPT looks up the task through CLINX using its existing context. OP has no task inbox, ID identification, pairing/binding, Observer configuration or background polling. Drafts, attachments, active generation and visible modals block sending with a native explanation; uncertain sends are never auto-retried. Startup and all normal navigation always display the official browser; local copies open only on explicit user request. 页面 > 外观 selects 跟随系统 (default), 浅色 or 夜晚 and persists the choice for all native windows and recovery UI without reloading or restyling the official website. Commands remain in File/Page menus and the menu bar entry. macOS 27 visual appearance remains unverified.
 
@@ -93,3 +93,24 @@ Official references: [CEF usage and lifecycle](https://chromiumembedded.github.i
 Synthetic test runs disable Chromium web notifications and skip native notification authorization. After a review, quit the review app and fixture server, unregister review/build copies, and use System Settings > Notifications > the review/helper entry > Reset Notifications to remove any temporary entries. Preserve the installed OP entry, its notification settings and production data.
 
 The optional CEF Alerts helper is not packaged. It registers a separate macOS notification application even when Chromium web notifications are disabled. OP completion reminders use the native UserNotifications channel; GPU, renderer and generic CEF helpers remain packaged.
+
+### Shared light/night header — 0.3.4
+
+Installed on Air after owner-authorized local validation: 72 core checks and
+4 restart checks passed, and all six running-candidate AppKit header renders
+were inspected. Installed desktop automation is not accepted: the UI tool
+resolves stale identities or times out. The same 281-file release was installed
+on iMac with strict signing and all 46 existing reply fingerprints preserved;
+iMac visual acceptance remains blocked by its locked desktop.
+
+Light and night modes share the approved night header geometry: traffic-light
+centers x=18.5/41.5/64.5, y=19.5 pt, Inter Bold 13 title, 32×30 pt icon controls,
+5.002 pt top offset, 4 pt gap and 12 pt trailing inset. Both use the same collect
+and refresh glyphs and 4 pt hover corners. Inactive windows hide both right
+icons and use #6E6E6E for the title. Light mode keeps its #F9F9F9 background and
+#313131 active foreground; night mode retains the approved dark palette.
+
+`OP_CEF_HEADER_VISUALS=1` adds six PNG header render captures to an isolated
+fixture run. Run these on the designated validation Mac; they are actual AppKit
+view renders from the running candidate, not screen captures of the desktop.
+The owner authorized Air validation after the iMac desktop remained locked.

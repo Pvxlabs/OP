@@ -4,8 +4,11 @@ Personal macOS ChatGPT client with a **Swift 6 / SwiftUI / AppKit native shell
 and CEF (Chromium) rendering backend**. It loads https://chatgpt.com/ directly,
 uses normal website sign-in, and does not use the OpenAI API or Electron.
 
-The current local Air delivery is **0.3.3**, installed as `/Applications/OP.app`.
+The current Air and iMac delivery is **0.3.4**, installed as `/Applications/OP.app`.
 The owner accepted the current Figma-matched header and everyday experience on Air on 2026-10-20.
+The 0.3.4 shared light/night header passed isolated native checks and six AppKit
+render reviews on Air. Installed desktop automation remains unverified because
+the visual tool resolves stale OP identities or times out.
 WebKit remains available as the 0.2.0 fallback; its source and historical tags are
 retained. This repository publishes source, tests and reviewed acceptance notes,
 not Chromium binaries, app bundles, login profiles or chat snapshots.
@@ -47,8 +50,9 @@ and native window controls. **页面 > 外观** offers 跟随系统 (default), �
 the selection is remembered across launches and applies to all native windows and
 recovery panels. Light chrome uses #F9F9F9 with #313131 controls; night chrome uses
 #1C1C1C with #A1A1AA active title/icons and a #6E6E6E inactive title.
-Night inactive hides the right icons as drawn in the owner-edited Figma design.
-Hover backgrounds are #2E2E2E with 4 pt corners. The website keeps its own appearance setting.
+Both appearances use the approved night geometry and glyphs. Inactive windows
+hide the right icons and mute the title, as in the owner-edited night design.
+Night hover backgrounds are #2E2E2E; both appearances use 4 pt corners. The website keeps its own appearance setting.
 
 “页面 > 后台回复完成提醒” enables local macOS notifications when an observed
 ChatGPT reply finishes while OP is in the background. Foreground replies, history,
@@ -85,7 +89,7 @@ fixtures need no account-linked IDs.
 
 ## Query CLINX execution in the current conversation
 
-Click the **query icon** (square checkmark at night, tray in light mode) beside refresh to send this ordinary message in the current
+Click the **query icon** (square checkmark in both appearances) beside refresh to send this ordinary message in the current
 ChatGPT conversation:
 
 > 请通过 CLINX 查询本对话刚才派发的 Codex 任务，报告最新执行状态；如果已经结束，请读取并总结结果。不要重新派发任务。

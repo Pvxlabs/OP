@@ -432,3 +432,37 @@ Renderer-crash recovery and clean synthetic process shutdown passed. GPU-process
 ## Conclusion
 
 **PASS:** isolated CEF architecture/build/signing, final native 40 pt header, refresh entry, silent startup, bounded cache and synthetic protection/lifecycle regressions. **BLOCKED:** formal production replacement due to first-turn protection coverage and incomplete full product acceptance. **NOT_RUN:** controlled real performance gains and remaining platform/file/distribution acceptance above. Existing OP installation and current work instances remain unchanged.
+
+
+## 2026-10-20 shared light/night header, Air 0.3.4
+
+The owner authorized Air validation after iMac remained locked. Light mode now
+uses the approved night traffic-light/title/icon positions and glyphs. Both
+appearances hide right icons when inactive, use a #6E6E6E inactive title and
+retain the 4 pt hover corners. Existing active palettes remain unchanged.
+
+- PASS: isolated Air fixture run, 72 core checks and 4 restart checks.
+- PASS: visual inspection of six AppKit header render captures from the running
+  candidate (light/night, focused/unfocused/hover), including inset rounded hover
+  backgrounds and matching native geometry. These are native view renders,
+  not desktop screenshots.
+- PASS: Air /Applications/OP.app 0.3.4 replacement, 281 file hashes match the
+  release build, strict deep signing, 71 existing reply fingerprints preserved.
+  A rollback app and consistent SQLite backup were retained locally.
+- PASS: test/fixture processes stopped, fixture/transfer listeners closed, review
+  copies unregistered; System Settings shows only the formal OP notification
+  entry, with its existing sound/banner preferences retained.
+- BLOCKED: installed formal-window desktop automation. The visual tool resolves
+  obsolete OP app identities or times out; an attempted name lookup selected a
+  review app, which was closed and its notification entry removed. This is not
+  a formal installed-window visual acceptance.
+- PASS: owner-authorized iMac update to the identical 281-file Air 0.3.4 bundle,
+  strict deep signing and launch; all 46 previous reply fingerprints and 2 legacy
+  inbox files preserved, with the prior app and consistent SQLite backup retained.
+- NOT_RUN: unlocked iMac desktop visual review.
+
+Local evidence: build/LightHeader-Air-20261020 and isolated fixture evidence
+run-20261020-065901. Publication and cleanup receipts are under
+build/Publish-034-20261020. Redundant build caches and transfer archives were
+recycled after live-file checks; installed data, SDK, rollback apps and evidence
+were retained. Raw account data and bundle artifacts remain untracked.

@@ -108,8 +108,8 @@ private final class HeaderButton: NSButton {
         titleLabel.isBordered = false; titleLabel.isBezeled = false; titleLabel.drawsBackground = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleArea.addSubview(titleLabel)
-        titleLeading = titleLabel.leadingAnchor.constraint(equalTo: titleArea.leadingAnchor, constant: 12)
-        titleBaseline = titleLabel.firstBaselineAnchor.constraint(equalTo: titleArea.topAnchor, constant: 21.727)
+        titleLeading = titleLabel.leadingAnchor.constraint(equalTo: titleArea.leadingAnchor, constant: 17)
+        titleBaseline = titleLabel.firstBaselineAnchor.constraint(equalTo: titleArea.topAnchor, constant: 24.727)
         NSLayoutConstraint.activate([
             titleLeading,
             titleLabel.trailingAnchor.constraint(equalTo: titleArea.trailingAnchor, constant: -12),
@@ -150,8 +150,8 @@ private final class HeaderButton: NSButton {
             button.isBordered = false
             (button.cell as? NSButtonCell)?.highlightsBy = []
         }
-        buttonTops = [collectButton, refreshButton].map { $0.topAnchor.constraint(equalTo: refreshArea.topAnchor, constant: 3) }
-        refreshTrailing = refreshButton.trailingAnchor.constraint(equalTo: refreshArea.trailingAnchor, constant: -8)
+        buttonTops = [collectButton, refreshButton].map { $0.topAnchor.constraint(equalTo: refreshArea.topAnchor, constant: 5.002) }
+        refreshTrailing = refreshButton.trailingAnchor.constraint(equalTo: refreshArea.trailingAnchor, constant: -12)
         NSLayoutConstraint.activate([
             collectButton.leadingAnchor.constraint(equalTo: refreshArea.leadingAnchor, constant: 4),
             collectButton.widthAnchor.constraint(equalToConstant: 32),
@@ -192,19 +192,15 @@ private final class HeaderButton: NSButton {
         let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         window.backgroundColor = NSColor(white: (dark ? 28.0 : 249.0) / 255, alpha: 1)
         let active = window.isKeyWindow && NSApp.isActive
-        // Figma: "02 你的调整区". Night inactive intentionally has no right icons.
+        // Both appearances use the approved night layout, glyphs and inactive behavior.
         titleLabel.textColor = dark && active
             ? NSColor(srgbRed: 161.0 / 255, green: 161.0 / 255, blue: 170.0 / 255, alpha: 1)
-            : NSColor(white: (dark ? 110.0 : (active ? 49.0 : 112.0)) / 255, alpha: 1)
-        titleLeading.constant = dark ? 17 : 12
-        titleBaseline.constant = dark ? 24.727 : 21.727
-        buttonTops.forEach { $0.constant = dark ? 5.002 : 3 }
-        refreshTrailing.constant = dark ? -12 : -8
-        collectButton.image = headerImages[dark ? "CollectDark" : "CollectLight"]
-        refreshButton.image = headerImages[dark ? "RefreshDark" : "RefreshLight"]
+            : NSColor(white: (active ? 49.0 : 110.0) / 255, alpha: 1)
+        collectButton.image = headerImages["CollectDark"]
+        refreshButton.image = headerImages["RefreshDark"]
         for button in [collectButton, refreshButton] {
             button.contentTintColor = titleLabel.textColor
-            button.isHidden = dark && !active
+            button.isHidden = !active
             (button as? HeaderButton)?.dark = dark
         }
         positionStandardControls()
@@ -215,12 +211,11 @@ private final class HeaderButton: NSButton {
     private func positionStandardControls() {
         guard window?.styleMask.contains(.fullScreen) == false else { return }
         guard let window else { return }
-        let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         for (index, entry) in standardControlFrames.enumerated() {
             let (button, _) = entry
             guard let parent = button.superview else { continue }
-            let center = parent.convert(NSPoint(x: (dark ? 18.5 : 16) + CGFloat(index) * 23,
-                y: window.frame.height - (dark ? 19.5 : 16)), from: nil)
+            let center = parent.convert(NSPoint(x: 18.5 + CGFloat(index) * 23,
+                y: window.frame.height - 19.5), from: nil)
             button.setFrameOrigin(NSPoint(x: center.x - button.frame.width / 2, y: center.y - button.frame.height / 2))
         }
     }

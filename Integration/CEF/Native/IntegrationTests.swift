@@ -35,6 +35,20 @@ import AppKit
     func mode(_ value: String) throws {
         try JSONSerialization.data(withJSONObject: [a: value]).write(to: root.appendingPathComponent("mode.json"), options: .atomic)
     }
+    func headerVisual(_ scene: ProductWindow, _ name: String, hover: Bool = false) throws {
+        guard CommandLine.arguments.contains("--header-visuals"), let window = scene.window,
+              let frame = window.contentView?.superview else { return }
+        let event = NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
+        if hover { scene.collectButton.mouseEntered(with: event) }
+        defer { if hover { scene.collectButton.mouseExited(with: event) } }
+        frame.layoutSubtreeIfNeeded(); frame.displayIfNeeded()
+        let area = NSRect(x: 0, y: frame.isFlipped ? 0 : frame.bounds.maxY - 40, width: frame.bounds.width, height: 40)
+        guard let bitmap = frame.bitmapImageRepForCachingDisplay(in: area) else { throw CocoaError(.fileWriteUnknown) }
+        frame.cacheDisplay(in: area, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+        try png.write(to: root.appendingPathComponent(name + ".png"))
+    }
     func run() async {
         let began = ContinuousClock.now
         let restart = CommandLine.arguments.contains("--restart-check")
@@ -75,6 +89,28 @@ import AppKit
                 try check(abs(metrics["titlebarPoints"]! - 40) < 0.1, "native titlebar measured height is 40 pt")
                 let color = scene.window!.backgroundColor.usingColorSpace(.sRGB)!
                 try check([color.redComponent,color.greenComponent,color.blueComponent].allSatisfy { abs($0 - 249.0/255) < 0.0001 }, "native titlebar background is #F9F9F9")
+                scene.window!.contentView?.superview?.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                let lightCollect = scene.collectButton.convert(scene.collectButton.bounds, to: nil)
+                let lightRefresh = scene.refreshButton.convert(scene.refreshButton.bounds, to: nil)
+                let lightTitle = scene.titleLabel.convert(scene.titleLabel.bounds, to: nil)
+                let lightControls = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].map {
+                    let button = scene.window!.standardWindowButton($0)!
+                    return button.convert(button.bounds, to: nil)
+                }
+                let lightCollectImage = scene.collectButton.image, lightRefreshImage = scene.refreshButton.image
+                metrics["lightIsKey"] = scene.window!.isKeyWindow ? 1 : 0
+                metrics["lightAppActive"] = NSApp.isActive ? 1 : 0
+                metrics["lightTitleRed"] = scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent
+                metrics["lightCollectHidden"] = scene.collectButton.isHidden ? 1 : 0
+                metrics["lightRefreshHidden"] = scene.refreshButton.isHidden ? 1 : 0
+                try headerVisual(scene, "light-focused")
+                try check(!scene.collectButton.isHidden && !scene.refreshButton.isHidden &&
+                          abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 49.0/255) < 0.0001 &&
+                          scene.collectButton.contentTintColor == scene.titleLabel.textColor && scene.refreshButton.contentTintColor == scene.titleLabel.textColor,
+                          "focused light header shows both icons with the existing light title palette")
+                try headerVisual(scene, "light-focused")
+                try headerVisual(scene, "light-hover", hover: true)
                 let navigationBeforeAppearance = first.navigationCount
                 product.setAppearance(.dark)
                 try check(scene.window!.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
@@ -98,10 +134,20 @@ import AppKit
                           abs(closeFrame.midX - 18.5) < 0.01 && abs(metrics["nightControlCenterY"]! - 19.5) < 0.01 &&
                           scene.titleLabel.font?.fontName == "Inter-Bold",
                           "Figma night header positions, button bounds and bundled font match the design")
+                let darkControls = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].map {
+                    let button = scene.window!.standardWindowButton($0)!
+                    return button.convert(button.bounds, to: nil)
+                }
+                try check(lightCollect == collectFrame && lightRefresh == refreshFrame &&
+                          lightTitle == scene.titleLabel.convert(scene.titleLabel.bounds, to: nil) && lightControls == darkControls &&
+                          scene.collectButton.image === lightCollectImage && scene.refreshButton.image === lightRefreshImage,
+                          "light header title, both glyphs and all traffic lights match the approved night geometry")
                 try check(abs(darkBackground.redComponent - 28.0/255) < 0.0001 &&
                           scene.refreshButton.contentTintColor == scene.titleLabel.textColor &&
                           scene.collectButton.contentTintColor == scene.titleLabel.textColor,
                           "night titlebar is dark and both icons match its title")
+                try headerVisual(scene, "dark-focused")
+                try headerVisual(scene, "dark-hover", hover: true)
                 try check(UserDefaults.standard.string(forKey: "nativeAppearance") == "dark", "appearance selection is persisted")
                 product.setAppearance(.system)
                 try check(NSApp.appearance == nil, "follow-system mode removes the native appearance override")
@@ -170,9 +216,11 @@ import AppKit
                           "night appearance reaches every open native window")
                 try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 110.0/255) < 0.0001 && scene.refreshButton.isHidden && scene.collectButton.isHidden,
                           "Figma inactive night title is #6E6E6E and right icons are hidden")
+                try headerVisual(scene, "dark-unfocused")
                 product.setAppearance(.light)
-                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 112.0/255) < 0.0001 && !scene.refreshButton.isHidden && !scene.collectButton.isHidden && scene.refreshButton.contentTintColor == scene.titleLabel.textColor && scene.collectButton.contentTintColor == scene.titleLabel.textColor,
-                          "inactive light icons match the lighter title color")
+                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 110.0/255) < 0.0001 && scene.refreshButton.isHidden && scene.collectButton.isHidden && scene.refreshButton.contentTintColor == scene.titleLabel.textColor && scene.collectButton.contentTintColor == scene.titleLabel.textColor,
+                          "inactive light header matches night behavior: muted title and hidden right icons")
+                try headerVisual(scene, "light-unfocused")
                 product.setAppearance(originalAppearance)
                 let revisionBeforePause = product.library.revision
                 product.library.enabled = false; product.setCapture(false)

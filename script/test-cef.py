@@ -21,6 +21,7 @@ try:
         # Fixtures use no account data. Keep Chromium's synthetic cookie key away
         # from the system Keychain and production profiles during ad-hoc signing.
         args = ['open','-n','-W',str(app),'--args','--self-test','--use-mock-keychain','--disable-notifications','--self-test-origin='+origin,'--evidence='+str(evidence)]
+        if os.environ.get('OP_CEF_HEADER_VISUALS') == '1': args += ['--header-visuals']
         if phase == 'restart': args += ['--restart-check']
         began=time.monotonic(); process=subprocess.Popen(args)
         # Includes real composer guard cases and bounded native shutdown waits.
