@@ -45,6 +45,10 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
  list(GET _suffix_list 0 _name_suffix)
  list(GET _suffix_list 1 _target_suffix)
  list(GET _suffix_list 2 _plist_suffix)
+ # OP uses its native UserNotifications channel; do not register a CEF Alerts app.
+ if(_target_suffix STREQUAL "_alerts")
+   continue()
+ endif()
  set(_helper_target "OPCEFIntegration_Helper${_target_suffix}")
  set(_helper_output_name "OPCEFIntegration Helper${_name_suffix}")
  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/Resources/helper-Info.plist.in" _plist_contents)
@@ -52,7 +56,7 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
  string(REPLACE "\${PRODUCT_NAME}" "${_helper_output_name}" _plist_contents "${_plist_contents}")
  string(REPLACE "\${OP_BUNDLE_ID}" "${OP_BUNDLE_ID}" _plist_contents "${_plist_contents}")
  string(REPLACE "\${BUNDLE_ID_SUFFIX}" "${_plist_suffix}" _plist_contents "${_plist_contents}")
- string(REPLACE "\${VERSION_SHORT}" "0.3.2" _plist_contents "${_plist_contents}")
+ string(REPLACE "\${VERSION_SHORT}" "0.3.3" _plist_contents "${_plist_contents}")
  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/helper${_target_suffix}.plist" "${_plist_contents}")
  add_executable(${_helper_target} MACOSX_BUNDLE Runtime/Helper.cc)
  SET_EXECUTABLE_TARGET_PROPERTIES(${_helper_target})
@@ -63,6 +67,8 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
  add_custom_command(TARGET ${CEF_TARGET} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CEF_TARGET_OUT_DIR}/${_helper_output_name}.app" "${CEF_APP}/Contents/Frameworks/${_helper_output_name}.app" VERBATIM)
 endforeach()
 add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
+ # Remove stale output when rebuilding a directory that previously packaged Alerts.
+ COMMAND ${CMAKE_COMMAND} -E rm -rf "${CEF_APP}/Contents/Frameworks/OPCEFIntegration Helper (Alerts).app"
  COMMAND ${CMAKE_COMMAND} -E make_directory "${CEF_APP}/Contents/Resources"
  COMMAND ${CMAKE_COMMAND} -E copy "${NATIVE_LIB}" "${CEF_APP}/Contents/Frameworks/libOPNative.dylib"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/compose-observer.py" "${OP_ROOT}/ChatGPTNative/Services/MessageObserver.js" "${CEF_APP}/Contents/Resources/CEFObserver.js"

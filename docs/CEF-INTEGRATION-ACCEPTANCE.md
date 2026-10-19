@@ -1,5 +1,49 @@
 # CEF integration candidate acceptance — 2026-10-19
 
+## Official webpage only and review cleanup — 2026-10-20 — Air 0.3.3
+
+Normal startup, conversation selection, cold loading and HTTP failure now keep
+CEF visible. Removed the automatic local transcript overlay and its snapshot
+loading/selection/handoff state. Local copies remain in File > 本地回复副本…
+(⌘L) and open only by explicit action. Selecting an official conversation
+closes that recovery sheet. Snapshot capture/storage, the approved Figma header,
+manual CLINX query and native reply reminders are retained.
+
+Final synthetic regression: `build/CEFIntegration/evidence/run-20261020-062504`,
+**70 core + 4 restart PASS**. Includes cold selections with/without snapshots,
+HTTP failure, explicit recovery and return to CEF, plus existing capture,
+header, query and native notification logic. A normal isolated fixture window
+was also visually checked: the browser remains visible, ⌘L opens the local
+copy sheet, and Close returns to the browser. This is fixture UI acceptance;
+no new real ChatGPT message was sent for this change.
+
+Cleanup exposed a recurrence: launching CEF re-registered its optional Alerts
+helper after the system notification entry was reset. The build now omits that
+helper and removes stale incremental bundle output before signing. Generic,
+GPU and renderer helpers remain. OP reply notifications continue through the
+native UserNotifications channel. See the
+[CEF maintainer's guidance](https://www.magpcss.org/ceforum/viewtopic.php?f=6&t=20177).
+The test runner disables web notification APIs during fixtures and now requests
+a graceful quit of only its isolated review bundle if a run times out.
+
+Air final replacement, relaunch and strict signing: **PASS**, **281 installed
+file hashes** match the release and all **61 prior reply fingerprints** remain.
+Bundle/data identity and Chromium profile are preserved. Final backup:
+`~/Library/Application Support/OP/Backups/OfficialOnly-20261020-062730/OP.app`.
+Local install/verification/cleanup receipts are under
+`build/OfficialOnly-Air-20261020`.
+
+Used System Settings' per-app Reset Notifications action to remove Air Review,
+Query Review, old CEF Alerts entries and OPCEFPrototype. After the final
+production launch, the actual notification settings UI and screenshot show
+**only OP** among OP entries; its notification permission and sounds remain on.
+No unrelated app preference, global notification database, Focus setting or
+screen-sharing policy was changed. Known review/prototype LaunchServices
+registrations are removed while preserving the apps/backups. Final process
+inventory shows **zero review processes and zero fixture services**, both
+temporary fixture listeners are closed, and the settings window is closed.
+The installed app runs from `/Applications/OP.app`, version **0.3.3**.
+
 ## Background reply notifications — 2026-10-20 — Air 0.3.2
 
 Scope: a locally observed ChatGPT reply finishing while OP is inactive sends one

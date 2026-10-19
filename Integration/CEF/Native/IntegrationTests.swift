@@ -46,11 +46,13 @@ import AppKit
                 product.openWindow(url: CEFIdentity.url(summary(a)))
                 let restored = product.windows.last!.workspace
                 try await wait("silent startup browser creation") { restored.active?.browser ?? 0 > 0 }
-                try check(!restored.showingLocal && !restored.showRecovery, "startup with existing SQLite copies shows official browser only")
+                try check(!restored.showRecovery && restored.active?.host.isHidden == false, "startup with existing SQLite copies shows official browser only")
                 try await wait("silent startup official content") { restored.active?.readableConversation == self.a }
-                try check(!restored.showingLocal, "startup never flashes a local transcript during official synchronization")
+                try check(!restored.showRecovery && restored.active?.host.superview != nil, "startup never flashes a local transcript during official synchronization")
             } else {
                 try mode("normal")
+                try check(!FileManager.default.fileExists(atPath: Bundle.main.bundlePath + "/Contents/Frameworks/OPCEFIntegration Helper (Alerts).app"),
+                          "optional CEF Alerts app is absent while native reply notifications remain available")
                 product.openWindow(url: CEFIdentity.url(summary(a)))
                 let scene = product.windows.last!, workspace = scene.workspace
                 try await wait("CEF bridge and SQLite save") { (await self.product.library.messages(self.a)).first?.state == .pageEnded }
@@ -123,6 +125,8 @@ import AppKit
                 try mode("403"); op_cef_action(first.browser, 0)
                 try await wait("403") { first.lastHTTPStatus == 403 }
                 try check((await product.library.messages(a)).first?.fingerprint == hash, "HTTP 403 cannot overwrite saved text")
+                try check(!workspace.showRecovery && first.host.superview != nil && !first.host.isHidden,
+                          "HTTP failure keeps official webpage visible without opening recovery")
                 try mode("normal"); op_cef_action(first.browser, 0)
                 try await wait("reload recovery") { first.error == nil && first.readableConversation == self.a }
                 try check((await product.library.messages(a)).count == 1, "reload recovery deduplicates same message")
@@ -139,15 +143,25 @@ import AppKit
                 try check(workspace.active === first && first.browser == browser && first.attachmentCount == attachments, "hot selection retains BrowserSession and CEF NSView")
                 try check(first.navigationCount == 1, "hot switch has no explicit new navigation")
                 metrics["nativeHotSelectionMs"] = workspace.selectionMilliseconds
-                workspace.open(summary(c)); try await wait("third") { workspace.active?.readableConversation == self.c }
+                workspace.open(summary(c))
+                try check(!workspace.showRecovery, "cold selection without a snapshot never opens local recovery")
+                try await wait("third") { workspace.active?.readableConversation == self.c }
                 workspace.open(summary(d)); try await wait("fourth") { workspace.active?.readableConversation == self.d }
                 try check(workspace.sessions.count == 3, "per-window LRU stays bounded at three")
                 workspace.trim()
                 try check(workspace.sessions.count == 1, "memory pressure evicts inactive sessions only")
                 workspace.open(summary(a))
-                try check(workspace.showingLocal && workspace.localID == a, "cold switch displays target-matching native local view")
-                try await wait("cold recovery") { workspace.active?.readableConversation == self.a && !workspace.showingLocal }
+                try check(!workspace.showRecovery, "cold selection with a saved snapshot keeps the official webpage")
+                try await wait("cold official content") { workspace.active?.readableConversation == self.a }
+                try check(workspace.active?.host.superview != nil && workspace.active?.host.isHidden == false && !workspace.showRecovery,
+                          "official browser stays visible after cold content loads")
                 try check((await product.library.messages(a)).count == 1, "cold recovery preserves deduplication")
+                workspace.recover()
+                try check(workspace.showRecovery && workspace.recoveryID == a, "local copies open only through explicit recovery")
+                workspace.open(summary(a))
+                try await Task.sleep(for: .milliseconds(100))
+                try check(!workspace.showRecovery && workspace.active?.host.isHidden == false,
+                          "opening an official conversation dismisses explicit local recovery")
                 product.openWindow(url: CEFIdentity.url(summary(b)))
                 try await wait("new window") { self.product.windows.last?.workspace.active?.readableConversation == self.b }
                 try check(product.windows.last!.workspace.active!.browser != workspace.active!.browser, "simultaneous windows own distinct CEF browsers and views")

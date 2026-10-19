@@ -120,10 +120,6 @@ final class CEFWorkspace {
     let library: SnapshotLibrary
     var sessions: [CEFSession] = []
     var active: CEFSession?
-    var localID: String?
-    var localMessages: [SavedMessage] = []
-    var localLoading = false
-    var showingLocal = false
     var showRecovery = false
     var showStatus = false
     var recoveryID: String?
@@ -132,8 +128,6 @@ final class CEFWorkspace {
     var cacheHits = 0
     var coldLoads = 0
     var titleChanged: (() -> Void)?
-    private var selection = UUID()
-    private var snapshotTask: Task<Void, Never>?
     private var pressure: DispatchSourceMemoryPressure?
     private var closing = false
 
@@ -147,16 +141,15 @@ final class CEFWorkspace {
         guard active == nil, !closing else { return }
         // Website first: no SQLite query or local transcript UI on the startup path.
         let initial = url ?? URL(string: "https://chatgpt.com/")!
-        select(url: initial, identity: CEFIdentity.conversation(initial), restoreLocal: false)
+        select(url: initial, identity: CEFIdentity.conversation(initial))
         await library.refresh()
     }
     func open(_ summary: ConversationSummary) { select(url: CEFIdentity.url(summary), identity: summary.id) }
     func openURL(_ url: URL) { select(url: url, identity: CEFIdentity.conversation(url)) }
-    private func select(url: URL, identity: String?, restoreLocal: Bool = true) {
+    private func select(url: URL, identity: String?) {
         guard !closing else { return }
         let began = ContinuousClock.now
         showRecovery = false
-        selection = UUID(); snapshotTask?.cancel()
         if let identity, let existing = sessions.first(where: { !$0.retired && $0.conversation == identity }) {
             active = existing; sessions.removeAll { $0 === existing }; sessions.append(existing)
             cacheHits += 1; syncState = "cacheHit"
@@ -164,27 +157,10 @@ final class CEFWorkspace {
             let next = CEFSession(id: NativeProduct.shared.nextKey(), url: url)
             sessions.append(next); active = next; coldLoads += 1; syncState = "coldLoad"
         }
-        if restoreLocal, let identity, active?.readableConversation != identity || active?.error != nil { presentLocal(identity) }
-        else { revealOfficial() }
         while sessions.count > 3 { let oldest = sessions.removeFirst(); oldest.retire(library: library) }
         let elapsed = began.duration(to: .now).components
         selectionMilliseconds = Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15
         titleChanged?()
-    }
-    private func presentLocal(_ id: String) {
-        let epoch = selection; let clearEpoch = library.clearEpoch
-        localID = id; recoveryID = id; localMessages = []; localLoading = true; showingLocal = true
-        snapshotTask = Task { [weak self] in
-            guard let self else { return }
-            let messages = await library.messages(id)
-            guard !Task.isCancelled, selection == epoch, localID == id, library.clearEpoch == clearEpoch else { return }
-            localMessages = messages; localLoading = false
-            syncState = messages.isEmpty ? "snapshotMiss" : "snapshotRestored"
-        }
-    }
-    func revealOfficial() {
-        showingLocal = false; localLoading = false; localID = nil; localMessages = []
-        snapshotTask?.cancel(); snapshotTask = nil
     }
     func receive(_ batch: ObservedConversation, session: CEFSession, browser: Int32) async -> Bool {
         guard !closing, !session.retired, library.enabled, session.browser == browser,
@@ -203,7 +179,7 @@ final class CEFWorkspace {
         if batch.pageState == .readFailure || batch.pageState == .interrupted { session.error = session.error ?? "官方内容读取失败，本机副本仍保留" }
         else if batch.messages.contains(where: { !$0.body.isEmpty && $0.state != .readFailure && !SnapshotIdentity.isErrorText($0.body) }) {
             session.readableConversation = batch.conversationID; session.error = nil
-            if active === session, localID == batch.conversationID { revealOfficial(); syncState = "officialReadable" }
+            if active === session { syncState = "officialReadable" }
         }
         titleChanged?(); return true
     }
@@ -224,7 +200,7 @@ final class CEFWorkspace {
     }
     func close() async {
         guard !closing else { return }; closing = true
-        snapshotTask?.cancel(); pressure?.cancel(); pressure = nil
+        pressure?.cancel(); pressure = nil
         for session in sessions {
             await session.flush()
             if let id = session.conversation, let store = library.store { try? await store.interrupt(id) }

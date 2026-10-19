@@ -90,9 +90,29 @@ separately from those tests. Preserve the owner-approved header unchanged.
 
 1. Establish build target/runtime: pinned CEF 154.0.34+g14c5a08+chromium-154.0.8037.98; AppKit+SwiftUI host; same-identity nested signing; bounded shutdown before CefShutdown. Verify Release/signature/startup before adding real-login acceptance.
 2. Restricted observation: internal public CEF DevTools API (no remote debugging listener), named isolated world, main frame and exact origin checks, bounded snapshot-only bridge, SQLite acknowledgement, sequence/conversation validation. No filesystem/network/native command API exposed to pages. Failure closed with visible protection status. Page completion is not server finality.
-3. Per-window 3-entry LRU, one retained NSView per session, matching local snapshot on cold selection and identity-checked handoff, memory-pressure trimming, explicit local restore. Startup navigates the official website before querying recent snapshots and never displays a local transcript overlay. Clear/pause must disable capture in all contexts; renderer failure retains native shell/local copies and offers retry, no reload loop.
+3. Per-window 3-entry LRU, one retained NSView per session, official browser visibility on cold selection and load/error states, memory-pressure trimming, explicit local restore. Startup and normal navigation never display a local transcript overlay. Local replies are shown only in the user-invoked recovery sheet. Clear/pause must disable capture in all contexts; renderer failure retains native shell/local copies and offers retry, no reload loop.
 4. Regression and UI: synthetic CEF bridge/security, dedup/error/stream/restart tests; reuse prior WebKit tests proportionally; native toolbar, multiwindow and clean exit; real login/website verification only in the isolated integration app. No repeating user-verified prototype scrolling as a new demo. Performance metrics must separate native selection, real visible/sync timing and process aggregate RSS; missing real frame metrics stay unverified.
 
 ## Boundaries and acceptance
 
 No change to current OP or prototype runtime, no /Applications replacement. Existing user work remains active. No credentials/cookies/tokens/headers in evidence. Synthetic content only for automated tests. Retain 403/429/error snapshot protection and completion states. Release build and synthetic tests alone do not establish production readiness. Final report distinguishes PASS, BLOCKED, NOT_RUN and user-observed prototype improvement from controlled product measurements. Developer ID/notarization remains separate from local Apple Development signing.
+
+## Official webpage only during normal use — 2026-10-20
+
+Delete the automatic local transcript overlay, its selection/loading state and
+its snapshot-read/handoff task. Opening, switching, reloading and failed loading
+keep the CEF browser visible. Keep snapshot capture/storage and the explicit
+File > 本地回复副本… sheet. Choosing an official conversation dismisses that sheet.
+Preserve the approved header, manual CLINX query and background reply reminders.
+
+Validate startup, cold switches with/without snapshots, HTTP errors, explicit
+recovery and return to the official browser. Install the verified Air artifact
+with rollback and production-data preservation. Close review processes and
+fixture services, unregister temporary app copies, and remove OP review, CEF
+Alerts and prototype notification settings through the system reset action;
+preserve the installed OP entry and other applications' settings.
+
+Do not package the optional CEF Alerts helper: its automatic macOS registration
+recreates a separate unwanted notification entry. Keep native OP notifications
+and the generic/GPU/renderer browser helpers. Remove stale Alerts output before
+signing incremental builds.

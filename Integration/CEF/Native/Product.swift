@@ -236,7 +236,7 @@ private final class HeaderButton: NSButton {
     @objc func recover() { workspace.recover() }
     @objc func queryExecution() {
         guard collectButton.isEnabled else { return }
-        guard !workspace.showingLocal, let session = workspace.active else {
+        guard !workspace.showRecovery, let session = workspace.active else {
             showQueryFailure("请先打开要查询的 ChatGPT 对话。")
             return
         }

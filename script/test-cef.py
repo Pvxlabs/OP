@@ -10,6 +10,7 @@ if installed.exists() and identity == plistlib.loads(installed.read_bytes()).get
 evidence = root/'build/CEFIntegration/evidence'/('run-'+datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
 evidence.mkdir(parents=True)
 server = subprocess.Popen(['python3',str(root/'Integration/CEF/fixture.py'),str(evidence)])
+process = None
 try:
     for _ in range(100):
         if (evidence/'port').exists(): break
@@ -19,7 +20,7 @@ try:
     for phase in ['core','restart']:
         # Fixtures use no account data. Keep Chromium's synthetic cookie key away
         # from the system Keychain and production profiles during ad-hoc signing.
-        args = ['open','-n','-W',str(app),'--args','--self-test','--use-mock-keychain','--self-test-origin='+origin,'--evidence='+str(evidence)]
+        args = ['open','-n','-W',str(app),'--args','--self-test','--use-mock-keychain','--disable-notifications','--self-test-origin='+origin,'--evidence='+str(evidence)]
         if phase == 'restart': args += ['--restart-check']
         began=time.monotonic(); process=subprocess.Popen(args)
         # Includes real composer guard cases and bounded native shutdown waits.
@@ -34,10 +35,20 @@ try:
             parts=[{'pid':int(x[0]),'ppid':int(x[1]),'cpuPS':float(x[2]),'rssMiB':int(x[3])/1024,'role':'renderer' if '(Renderer)' in x[4] else 'gpu' if '(GPU)' in x[4] else 'browser' if int(x[0]) in main else 'utility'} for x in rows if int(x[0]) in family]
             samples.append({'phase':phase,'seconds':round(time.monotonic()-began,3),'processes':parts})
             time.sleep(.25)
-        if process.poll() is None: raise RuntimeError('Test timeout; no other application will be terminated')
+        if process.poll() is None: raise RuntimeError('Test timeout; stopping only the isolated review app')
         report=json.loads((evidence/(phase+'.json')).read_text()); print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)
         if report['status'] != 'PASS': break
     (evidence/'process-samples.json').write_text(json.dumps(samples,indent=2))
     print('Evidence:',evidence)
 finally:
     server.terminate();server.wait()
+    if process is not None and process.poll() is None:
+        # Quit only this separately identified review bundle, including on timeout.
+        quit_review = """import AppKit
+let target = URL(fileURLWithPath: CommandLine.arguments.last!).standardizedFileURL
+for app in NSWorkspace.shared.runningApplications where app.bundleURL?.standardizedFileURL == target {
+    _ = app.terminate()
+}
+"""
+        subprocess.run(['xcrun','swift','-',str(app)], input=quit_review, text=True, check=True)
+        process.wait(timeout=15)

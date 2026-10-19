@@ -4,7 +4,7 @@ Personal macOS ChatGPT client with a **Swift 6 / SwiftUI / AppKit native shell
 and CEF (Chromium) rendering backend**. It loads https://chatgpt.com/ directly,
 uses normal website sign-in, and does not use the OpenAI API or Electron.
 
-The current local Air delivery is **0.3.2**, installed as `/Applications/OP.app`.
+The current local Air delivery is **0.3.3**, installed as `/Applications/OP.app`.
 The owner accepted the current Figma-matched header and everyday experience on Air on 2026-10-20.
 WebKit remains available as the 0.2.0 fallback; its source and historical tags are
 retained. This repository publishes source, tests and reviewed acceptance notes,
@@ -33,6 +33,10 @@ open -n build/CEFReview/Release/OPCEFIntegration.app
 Close that review instance before rebuilding or running its synthetic tests.
 The build script never replaces or restarts `/Applications/OP.app`. Sign in
 normally within each separately identified instance; no Cookie migration is used.
+
+Normal navigation always shows the official webpage. Local replies appear only
+when you choose File > 本地回复副本…; they never automatically cover loading or
+error pages.
 
 The CEF target shares the SQLite model/store and local recovery code with the
 WebKit baseline. It provides a restricted isolated-world reply observer, a
