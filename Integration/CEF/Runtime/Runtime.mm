@@ -21,7 +21,7 @@ std::map<int, CefRefPtr<Client>> clients;
 bool quitting = false;
 std::string fixtureOrigin;
 std::string worldSource;
-std::string deliverySource;
+std::string querySource;
 std::string Origin(const std::string& text) {
   NSURL* u = [NSURL URLWithString:[NSString stringWithUTF8String:text.c_str()]];
   if (!u || u.user || u.password) return "";
@@ -112,17 +112,17 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     else if (item->IsCanceled()) Event("downloadCancelled");
   }
   void OnDevToolsMethodResult(CefRefPtr<CefBrowser>, int id, bool success, const void* result, size_t size) override {
-    auto delivery = deliveries_.find(id);
-    if (delivery != deliveries_.end()) {
+    auto query = queries_.find(id);
+    if (query != queries_.end()) {
       auto value = success ? Dictionary(result, size) : nullptr;
       auto remote = value ? value->GetDictionary("result") : nullptr;
-      if (remote && remote->GetType("value") == VTYPE_STRING) Event("clinxDelivery", remote->GetString("value"));
+      if (remote && remote->GetType("value") == VTYPE_STRING) Event("executionQuery", remote->GetString("value"));
       else {
-        auto failure = CefDictionaryValue::Create(); failure->SetString("request", delivery->second);
+        auto failure = CefDictionaryValue::Create(); failure->SetString("request", query->second);
         failure->SetString("status", "uncertain"); failure->SetString("reason", "网页执行未确认");
-        auto v = CefValue::Create(); v->SetDictionary(failure); Event("clinxDelivery", CefWriteJSON(v, JSON_WRITER_DEFAULT));
+        auto v = CefValue::Create(); v->SetDictionary(failure); Event("executionQuery", CefWriteJSON(v, JSON_WRITER_DEFAULT));
       }
-      deliveries_.erase(delivery);
+      queries_.erase(query);
     }
     if (id == flush_) Event("flushed");
     if (id == diagnostic_ && success) {
@@ -247,16 +247,16 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined'");
     p->SetBool("returnByValue", true); isolationTest_ = Command("Runtime.evaluate", p);
   }
-  void Deliver(const std::string& payload) {
-    if (!browser_ || payload.size() > 64 * 1024 || deliverySource.empty() || Origin(browser_->GetMainFrame()->GetURL()).empty()) return;
+  void Query(const std::string& payload) {
+    if (!browser_ || payload.size() > 64 * 1024 || querySource.empty() || Origin(browser_->GetMainFrame()->GetURL()).empty()) return;
     auto data = Dictionary(payload.data(), payload.size());
     if (!data || data->GetString("request").empty()) return;
     for (const auto& context : contexts_) if (context.second == mainFrame_) {
       auto value = CefValue::Create(); value->SetDictionary(data);
       auto p = CefDictionaryValue::Create(); p->SetInt("contextId", context.first);
-      p->SetString("expression", "(" + deliverySource + ")(" + CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString() + ")");
+      p->SetString("expression", "(" + querySource + ")(" + CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString() + ")");
       p->SetBool("returnByValue", true); p->SetBool("awaitPromise", true);
-      deliveries_[Command("Runtime.evaluate", p)] = data->GetString("request");
+      queries_[Command("Runtime.evaluate", p)] = data->GetString("request");
       return;
     }
   }
@@ -266,7 +266,7 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
   int command_ = 0, install_ = 0, tree_ = 0, isolationTest_ = 0, flush_ = 0, diagnostic_ = 0;
   bool enabled_ = true;
   std::map<int, std::string> contexts_; std::map<int, int> pending_;
-  std::map<int, std::string> deliveries_;
+  std::map<int, std::string> queries_;
   CefRefPtr<CefRegistration> registration_;
   IMPLEMENT_REFCOUNTING(Client);
 };
@@ -303,7 +303,7 @@ void op_cef_flush(int32_t id) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(i
 void op_cef_close(int32_t id) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->browser_->GetHost()->CloseBrowser(true); }
 void op_cef_enabled(int32_t id, bool enabled) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Enabled(enabled); }
 void op_cef_ack(int32_t id, int32_t context, int32_t request, bool ok) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Ack(context, request, ok); }
-void op_cef_clinx(int32_t id, const char* payload) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Deliver(payload); }
+void op_cef_query(int32_t id, const char* payload) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Query(payload); }
 void op_cef_test(int32_t id, int32_t action) {
   CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i == clients.end() || fixtureOrigin.empty()) return;
   auto b = i->second->browser_;
@@ -340,9 +340,9 @@ int main(int argc, char* argv[]) {
     // This target never exposes a remote debugging listener, including in Release.
     NSString* source = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"CEFObserver" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
     if (!source) return 2;
-    NSString* delivery = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"ClinxDelivery" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
-    if (!delivery) return 2;
-    deliverySource = delivery.UTF8String;
+    NSString* query = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"ExecutionQuery" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
+    if (!query) return 2;
+    querySource = query.UTF8String;
     auto command = CefCommandLine::CreateCommandLine(); command->InitFromArgv(argc, argv);
     if (command->HasSwitch("self-test-origin")) {
       std::string value = command->GetSwitchValue("self-test-origin");

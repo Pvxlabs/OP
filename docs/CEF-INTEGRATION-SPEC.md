@@ -18,9 +18,53 @@ must remain readable while the window is active or inactive. Preserve the 40 pt
 header, window controls and conversation; changing appearance must not navigate
 or restyle the official website, which retains its own theme setting.
 
-2026-10-20 CLINX amendment: the requested native 收取 action sits beside refresh.
-Ordinary-chat identification, exact Observer verification and durable result
-delivery follow [the automatic identification contract](CLINX-AUTO-BINDING-SPEC.md).
+2026-10-20 simplified CLINX amendment (supersedes the earlier automatic binding
+and inbox contracts): 收取 sends one fixed ordinary query in the current loaded
+conversation. ChatGPT owns task identity, CLINX status lookup and result analysis.
+Remove automatic identification, pairing/binding UI and stores, Observer access,
+polling and automatic result delivery from OP. Preserve existing files/Keychain
+entries without reading or writing them. Keep night mode and all unrelated
+browser/protection behavior. Do not send over drafts, attachments, active
+responses or visible modals. Disable concurrent clicks, verify a newly submitted
+user bubble, permit a later explicit repeat, and never auto-retry uncertain sends.
+Acceptance requires real CEF composer/native-button tests, draft/busy/attachment/
+modal/navigation/no-readback guards, existing appearance/protection/restart
+regression, strict signing, and a backed-up Air installation matching the candidate.
+Real-site/UI evidence is recorded separately from synthetic checks.
+
+2026-10-20 header refinement: show only the tray and refresh symbols, without
+收取 text. Both controls use borderless native buttons with a rounded hover surface,
+visible while the pointer is inside, plus a stronger pressed state. Keep equal 32 x 28 pt hit targets with
+an 8 pt gap. Both icon tints use exactly the title color, including muted inactive
+light/dark states. Preserve tooltips, accessibility labels, actions and the 40 pt
+header. A small NSButton subclass tracks entry/exit and paints only the rounded background;
+AppKit retains click, pressed-state tracking, disabled handling and accessibility.
+
+2026-10-20 Figma amendment supersedes the previous header styling and the
+uninstalled inset/color experiment. The source is the owner's completed
+“02 你的调整区” in Figma file `xWHKogXYl3WijpAvXxn7MP`, page
+“顶部栏 · 当前基线与调整”. Use the exported vectors without replacing them
+with similar symbols. Bundle Inter Bold at 13 pt, including its OFL license.
+
+- Night: #1C1C1C background, active title/icons #A1A1AA, inactive title #6E6E6E.
+  The inactive design contains no right-hand icons; hide both in that state.
+- Night hover: #2E2E2E, 32 x 30 pt, radius 4 pt, top 5.002 pt, right 12 pt,
+  gap 4 pt. Each button shows its own background while hovered/pressed.
+- Night collect uses the exact square/checkmark vectors; refresh uses the
+  exported refresh path. Centers are 64 and 28 pt from the right edge.
+- Night native traffic-light centers: x 18.5/41.5/64.5 pt, y 19.5 pt from top.
+  Title starts at x 95 pt with baseline 24.727 pt from top.
+- Light active remains as drawn: #F9F9F9 / #313131, original tray vector,
+  centers 64/24 pt from right, y 18 pt; title x 90 pt, baseline 21.727 pt;
+  traffic-light centers x 16/39/62 pt, y 16 pt. Unspecified light inactive
+  behavior retains the existing #707070 tint; no new style is inferred.
+
+Keep native target/action, tooltip/accessibility names, 40 pt header, dynamic
+conversation titles and system-managed full-screen controls. Query, refresh,
+night mode and snapshot protection behavior remain unchanged. Final verification
+must include real native pointer hover evidence and current isolated CEF tests,
+then a backed-up, hash-verified installation on Air. The export and delivery
+receipt are retained locally under `build/Figma-Delivery-20261020`.
 
 ## Milestones and gates
 

@@ -2,11 +2,14 @@ import AppKit
 import SwiftUI
 import Observation
 
-struct ClinxDeliveryReport: Decodable {
+struct ExecutionQueryReport: Decodable {
     var request: String = ""
     let status: String
     let reason: String
-    var observation: ClinxObservation? = nil
+}
+
+enum ExecutionQuery {
+    static let message = "请通过 CLINX 查询本对话刚才派发的 Codex 任务，报告最新执行状态；如果已经结束，请读取并总结结果。不要重新派发任务。"
 }
 
 @MainActor @Observable
@@ -32,29 +35,37 @@ final class CEFSession: Identifiable {
     var attachmentCount = 0
     var retired = false
     var flushCount = 0
-    private var deliveries: [String: CheckedContinuation<ClinxDeliveryReport, Never>] = [:]
-    func deliverClinx(conversation: String, message: String, marker: String, verify: Bool,
-                      inspect: Bool = false, identification: String = "") async -> ClinxDeliveryReport {
-        guard !Task.isCancelled, deliveries.isEmpty, browser > 0, !retired else { return .init(status: "waiting", reason: "等待其他回执处理。") }
+    private var query: (id: String, continuation: CheckedContinuation<ExecutionQueryReport, Never>)?
+    func queryExecution() async -> ExecutionQueryReport {
+        guard query == nil else { return .init(status: "waiting", reason: "正在发送查询，请稍候。") }
+        guard !Task.isCancelled, browser > 0, !retired, !loading, let conversation else {
+            return .init(status: "waiting", reason: "请先打开并加载要查询的 ChatGPT 对话。")
+        }
         let request = UUID().uuidString
-        let object: [String: Any] = ["request": request, "conversation": conversation, "message": message, "marker": marker, "verify": verify,
-                                     "inspect": inspect, "identification": identification,
+        let object: [String: Any] = ["request": request, "conversation": conversation,
+                                     "message": ExecutionQuery.message,
                                      "deadline": Date().addingTimeInterval(10).timeIntervalSince1970 * 1000]
-        guard let data = try? JSONSerialization.data(withJSONObject: object), let json = String(data: data, encoding: .utf8), data.count <= 64 * 1024 else {
-            return .init(status: "waiting", reason: "回执内容超过限制。")
+        guard let data = try? JSONSerialization.data(withJSONObject: object), let json = String(data: data, encoding: .utf8) else {
+            return .init(status: "waiting", reason: "无法准备查询消息。")
         }
         return await withCheckedContinuation { continuation in
-            deliveries[request] = continuation
-            json.withCString { op_cef_clinx(browser, $0) }
+            query = (request, continuation)
+            json.withCString { op_cef_query(browser, $0) }
             Task { [weak self] in
-                try? await Task.sleep(for: .seconds(20))
-                self?.deliveries.removeValue(forKey: request)?.resume(returning: .init(status: "uncertain", reason: "网页核验超时。"))
+                try? await Task.sleep(for: .seconds(15))
+                guard let self, query?.id == request else { return }
+                finishQuery(.init(status: "uncertain", reason: "发送核验超时，请检查当前对话或输入框；不会自动重发。"))
             }
         }
     }
-    func deliveryResult(_ json: String) {
-        guard let report = try? JSONDecoder().decode(ClinxDeliveryReport.self, from: Data(json.utf8)) else { return }
-        deliveries.removeValue(forKey: report.request)?.resume(returning: report)
+    func queryResult(_ json: String) {
+        guard let report = try? JSONDecoder().decode(ExecutionQueryReport.self, from: Data(json.utf8)),
+              query?.id == report.request else { return }
+        finishQuery(report)
+    }
+    private func finishQuery(_ report: ExecutionQueryReport) {
+        let pending = query; query = nil
+        pending?.continuation.resume(returning: report)
     }
     private var retiredInterrupt: Task<Void, Never>?
     var conversation: String? { CEFIdentity.conversation(url) }

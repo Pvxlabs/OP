@@ -50,9 +50,6 @@ import AppKit
                 try await wait("silent startup official content") { restored.active?.readableConversation == self.a }
                 try check(!restored.showingLocal, "startup never flashes a local transcript during official synchronization")
             } else {
-                try await ClinxObserver(endpoint: CEFIdentity.fixtureOrigin!, fixture: true).health()
-                try check(true, "loopback fixture is reachable before CEF navigation")
-                let clinxReceipt = try await runClinxModels()
                 try mode("normal")
                 product.openWindow(url: CEFIdentity.url(summary(a)))
                 let scene = product.windows.last!, workspace = scene.workspace
@@ -81,9 +78,28 @@ import AppKit
                 try check(scene.window!.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
                           "night mode applies native dark appearance")
                 let darkBackground = scene.window!.backgroundColor.usingColorSpace(.sRGB)!
-                let refreshColor = scene.refreshButton.contentTintColor!.usingColorSpace(.sRGB)!
-                try check(abs(darkBackground.redComponent - 28.0/255) < 0.0001 && refreshColor.redComponent > 0.9,
-                          "night titlebar is dark with a bright refresh glyph")
+                scene.window!.contentView?.superview?.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                let collectFrame = scene.collectButton.convert(scene.collectButton.bounds, to: nil)
+                let refreshFrame = scene.refreshButton.convert(scene.refreshButton.bounds, to: nil)
+                let close = scene.window!.standardWindowButton(.closeButton)!
+                let closeFrame = close.convert(close.bounds, to: nil)
+                metrics["nightCollectRightInset"] = scene.window!.frame.width - collectFrame.maxX
+                metrics["nightRefreshRightInset"] = scene.window!.frame.width - refreshFrame.maxX
+                metrics["nightButtonTop"] = scene.window!.frame.height - collectFrame.maxY
+                metrics["nightControlCenterX"] = closeFrame.midX
+                metrics["nightControlCenterY"] = scene.window!.frame.height - closeFrame.midY
+                try check(abs(collectFrame.width - 32) < 0.01 && abs(collectFrame.height - 30) < 0.01 &&
+                          abs(metrics["nightCollectRightInset"]! - 48) < 0.01 &&
+                          abs(metrics["nightRefreshRightInset"]! - 12) < 0.01 &&
+                          abs(metrics["nightButtonTop"]! - 5.002) < 0.01 &&
+                          abs(closeFrame.midX - 18.5) < 0.01 && abs(metrics["nightControlCenterY"]! - 19.5) < 0.01 &&
+                          scene.titleLabel.font?.fontName == "Inter-Bold",
+                          "Figma night header positions, button bounds and bundled font match the design")
+                try check(abs(darkBackground.redComponent - 28.0/255) < 0.0001 &&
+                          scene.refreshButton.contentTintColor == scene.titleLabel.textColor &&
+                          scene.collectButton.contentTintColor == scene.titleLabel.textColor,
+                          "night titlebar is dark and both icons match its title")
                 try check(UserDefaults.standard.string(forKey: "nativeAppearance") == "dark", "appearance selection is persisted")
                 product.setAppearance(.system)
                 try check(NSApp.appearance == nil, "follow-system mode removes the native appearance override")
@@ -138,11 +154,11 @@ import AppKit
                 product.setAppearance(.dark)
                 try check(product.windows.allSatisfy { $0.window!.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua },
                           "night appearance reaches every open native window")
-                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 174.0/255) < 0.0001 && scene.refreshButton.contentTintColor!.usingColorSpace(.sRGB)!.redComponent > 0.9,
-                          "inactive night window keeps its title and refresh readable")
+                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 110.0/255) < 0.0001 && scene.refreshButton.isHidden && scene.collectButton.isHidden,
+                          "Figma inactive night title is #6E6E6E and right icons are hidden")
                 product.setAppearance(.light)
-                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 112.0/255) < 0.0001 && scene.refreshButton.contentTintColor!.usingColorSpace(.sRGB)!.redComponent < 0.2,
-                          "inactive light window keeps its title and refresh readable")
+                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 112.0/255) < 0.0001 && !scene.refreshButton.isHidden && !scene.collectButton.isHidden && scene.refreshButton.contentTintColor == scene.titleLabel.textColor && scene.collectButton.contentTintColor == scene.titleLabel.textColor,
+                          "inactive light icons match the lighter title color")
                 product.setAppearance(originalAppearance)
                 let revisionBeforePause = product.library.revision
                 product.library.enabled = false; product.setCapture(false)
@@ -171,8 +187,7 @@ import AppKit
                 try await wait("stream interruption") { (await self.product.library.messages(streamingID)).first?.state == .interrupted }
                 try check((await product.library.messages(streamingID)).first?.state == .interrupted, "closing an unfinished stream marks it interrupted")
                 try mode("normal")
-                try await runClinx(receipt: clinxReceipt)
-                try await runClinxIdentification()
+                try await runExecutionQuery()
             }
             let elapsed = began.duration(to: .now).components
             metrics["suiteSeconds"] = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18

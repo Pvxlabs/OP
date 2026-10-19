@@ -1,5 +1,10 @@
 # CLINX results in the original ordinary ChatGPT conversation
 
+> Historical contract, superseded on 2026-10-20 by the simplified manual query
+> action in [CEF-INTEGRATION-SPEC.md](CEF-INTEGRATION-SPEC.md). Automatic
+> identification, pairing/binding, Observer polling and the task inbox are removed.
+
+
 Date: 2026-10-20 (Asia/Shanghai). Implementation contract.
 
 ## Objective and scope

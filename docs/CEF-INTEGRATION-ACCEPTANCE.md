@@ -1,5 +1,159 @@
 # CEF integration candidate acceptance — 2026-10-19
 
+
+## Air owner acceptance and OP registration — 2026-10-20
+
+The owner explicitly confirmed actual Air use of the installed Figma-matched
+0.3.1 is correct. Installed everyday/header acceptance is **PASS** from that
+feedback. This supersedes the prior product-acceptance uncertainty; it does
+not claim that the separate automation resolver has been repaired.
+
+Removed eight stale OP backup/build registrations from LaunchServices without
+removing or modifying the backup apps. Re-registered `/Applications/OP.app`
+and refreshed Spotlight metadata. A fresh NSWorkspace lookup selects that
+installed path, the running process reports the same path, and Spotlight reports
+`local.personal.OP.CEFIntegration`. Final registry has one registration for that
+identity at the installed path. These native system checks are **PASS**.
+
+`script/refresh-op-registration.py` repeats this narrow maintenance operation:
+verify the installed signature/identity, unregister only known OP backup/build
+copies, force-refresh the installed app and preserve backup metadata. It does
+not reset the global database, modify signed app contents, or touch profiles,
+reply stores or Keychain. Run it after replacing an installed bundle if needed.
+
+The already-running computer-use service still maps the installed URL to the
+retired WebKit identity; a new JavaScript session does not clear that service's
+process-local mapping. Selecting the current build identity instead reaches a
+separate AX timeout. This is **BLOCKED** only for that tool session; restarting
+the owning automation client remains an external follow-up. Do not change OP's
+persisted bundle/data identity to work around the tool's process cache.
+
+Local metadata-only evidence is under `build/Publish-iMac-20261020`.
+
+
+## Owner-edited Figma header — 2026-10-20 — Air
+
+This delivery supersedes the earlier header styling and uninstalled inset/color
+experiment. Implemented the actual exported vectors and coordinates from
+“02 你的调整区” in Figma file `xWHKogXYl3WijpAvXxn7MP`.
+Night uses #1C1C1C / #A1A1AA, exact square-checkmark collect glyph, and
+#2E2E2E hover surfaces (32 x 30 pt, 4 pt corners, 4 pt gap, 12 pt right inset).
+The inactive night design contains no right icons; both hide, and title is
+#6E6E6E. Light active keeps its tray glyph and original drawn positions/colors.
+Inter Bold 13 pt is bundled with its OFL license and registered per process.
+Native traffic-light centers and title baselines follow the exported design.
+No additional visual proposal was introduced.
+
+Native pointer-over screenshots for both buttons, pointer exit, and light state:
+**PASS**, under `build/Figma-Delivery-20261020/`. The first visual check caught
+AppKit's 32 pt accessory clip view truncating the 30 pt hover surface at the
+bottom. Disabling clipping on that accessory's immediate container preserves
+the design and exposes all four rounded corners. AppKit still owns native
+controls, hit/action behavior, accessibility and full-screen controls.
+
+Final isolated real-CEF regression: **55 core + 4 restart PASS** at
+`build/CEFIntegration/evidence/run-20261020-053437`. Includes exact windowed
+geometry/font, inactive state, appearance switching without navigation, manual
+query sending/guards, snapshot preservation, cache, crash and restart behavior.
+Measured header 40 pt, button top 5 pt (design 5.002 pt raster-aligned), right
+inset 12 pt, traffic-light first center (18.5, 19.5) pt. Initial 32 pt header
+experiment failed that existing height check and was corrected before delivery.
+
+Air release build, strict deep signing, backed-up installation and relaunch:
+**PASS**. All 284 candidate/installed file hashes match; all 57
+pre-existing reply fingerprints remain. Version stays 0.3.1, source is local
+working-tree changes based on `5781150`. Backup: `/Users/tinzleung/Library/Application Support/OP/Backups/FigmaHeader-20261020-053602/OP.app`.
+Receipt: `build/Figma-Delivery-20261020/installation.json`; post-launch
+verification: `build/Figma-Delivery-20261020/post-launch-verification.json`.
+
+Installed-window automation: **BLOCKED** by stale application registration
+(`/Applications/OP.app` resolves to retired `local.personal.ChatGPTNative`;
+bundle-ID resolution is ambiguous across retained backups). Running installed
+process, exact bundle hashes/signature and data preservation were independently
+verified. Screenshots are explicitly from the separate review app, and inactive
+state is verified by native integration checks because per-app screenshot
+capture activates the target. New production task dispatch/query and broader
+website acceptance were **NOT_RUN** for this visual-only change.
+
+
+## Header hover and inactive icon tint — 2026-10-20 — Air
+
+Owner feedback confirms that the simplified manual query now works in normal
+use ("方式 1 现在能正常使用了"). This supplies real-use acceptance for that flow,
+separate from the UI automation timeout recorded below.
+
+Both top-right controls are now icon-only, with equal 32 x 28 pt targets and an
+8 pt gap. Tooltips and accessibility names remain. Both use the title's exact
+active/inactive light/dark tint. A small borderless NSButton subclass paints a
+6 pt corner-radius background on pointer entry and removes it on exit; pressing
+uses a stronger fill. It preserves native target/action, disabled handling and
+accessibility. A bordered accessoryBarAction was rejected after the real window
+screenshot showed system-colored icons: the SDK documents contentTintColor as
+applicable only to borderless buttons.
+
+Actual pointer-over screenshots of both controls in the independent native CEF
+test window: **PASS**, saved at `build/Header-Air-20261020/hover-refresh.png` and
+`hover-collect.png`. Text is absent and title/icon colors match in the inspected
+window. Final regression: `build/CEFIntegration/evidence/run-20261020-043220`,
+**54 core + 4 restart PASS**, including muted inactive icon/title equality in
+light and night modes, query sending, protection, cache and restart. The earlier
+`run-20261020-042923` failure retained an obsolete expectation that the night
+refresh icon stay bright even when inactive; it was replaced with the requested
+icon/title equality while retaining the exact dark-background and inactive-title
+color checks. No behavioral protection was dropped.
+
+Air installation/relaunch, strict deep signing and **273 candidate/installed file
+hashes: PASS**. All **53 pre-existing reply fingerprints** remain. Version stays
+0.3.1; prior build backup is
+`~/Library/Application Support/OP/Backups/HeaderHover-20261020-043359/OP.app`.
+Receipt: `build/Header-Air-20261020/installation.json`.
+The installed work-chat UI resolver still reaches an accessibility timeout;
+the hover screenshots above are explicitly from the independent test window.
+
+
+## Simplified manual CLINX query — 2026-10-20 — Air 0.3.1
+
+This delivery supersedes the automatic identification/inbox behavior described
+below. 收取 now submits one fixed ordinary message in the currently loaded chat:
+
+> 请通过 CLINX 查询本对话刚才派发的 Codex 任务，报告最新执行状态；如果已经结束，请读取并总结结果。不要重新派发任务。
+
+Removed the identifier, pairing/binding/inbox UI and persistence implementation,
+Observer/Keychain client, polling, automatic result delivery and their obsolete
+fixtures/tests. Existing data/credentials are not deleted. Night mode, native
+chrome, browser controls, local snapshots/recovery and CEF lifecycle remain.
+
+Validation: `build/CEFIntegration/evidence/run-20261020-041842` reports **54 core
++ 4 restart PASS**. The native button is actually clicked in the real CEF fixture;
+it disables during send and opens no inbox/window. A later explicit repeat
+submits the same message again. Drafts, active generation, modal dialogs and
+attachments block sending. Concurrent requests, disabled submit, user edits,
+new modals, navigation during insertion and missing readback are covered without
+automatic retry. The query succeeds without assistant-message capture identity.
+No Observer `/v1/` request occurs. Existing appearance (including inactive windows),
+cache, snapshot integrity, crash recovery and restart checks pass. The earlier
+85-check total included the removed feature; it is historical, not the current
+acceptance count.
+
+Release and strict deep signing: **PASS**. Installed `/Applications/OP.app` is
+0.3.1, retains `local.personal.OP.CEFIntegration`, and all **273 file hashes**
+match the release candidate. The removed `ClinxDelivery.js` is absent; the new
+`ExecutionQuery.js` is packaged. Graceful quit, backup, replacement and relaunch:
+**PASS**. All **51 existing reply fingerprints** are preserved after launch.
+Air had no legacy inbox files. Backup:
+`~/Library/Application Support/OP/Backups/ManualQuery-20261020-042009/OP.app`,
+with a consistent local SQLite backup beside it. Installation receipt:
+`build/Query-Air-20261020/installation.json`. Source is the local working tree
+based on `5781150`; this delivery did not publish a new Git commit.
+
+Installed real-chat UI acceptance: **BLOCKED**. The installed-path UI resolver
+still selects the old WebKit identity; resolving via the current CEF build path
+reaches an accessibility timeout. Targeted LaunchServices re-registration did
+not resolve it. No real task was dispatched/continued/cancelled for testing;
+no production ChatGPT query result is claimed. The successful native-button
+fixture and installed process/hash checks are separate from this UI gate.
+
+
 ## Repository integration and local artifact cleanup — 2026-10-20
 
 This delivery integrates the night appearance and CLINX original-chat changes on

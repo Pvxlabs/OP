@@ -52,7 +52,7 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
  string(REPLACE "\${PRODUCT_NAME}" "${_helper_output_name}" _plist_contents "${_plist_contents}")
  string(REPLACE "\${OP_BUNDLE_ID}" "${OP_BUNDLE_ID}" _plist_contents "${_plist_contents}")
  string(REPLACE "\${BUNDLE_ID_SUFFIX}" "${_plist_suffix}" _plist_contents "${_plist_contents}")
- string(REPLACE "\${VERSION_SHORT}" "0.3.0" _plist_contents "${_plist_contents}")
+ string(REPLACE "\${VERSION_SHORT}" "0.3.1" _plist_contents "${_plist_contents}")
  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/helper${_target_suffix}.plist" "${_plist_contents}")
  add_executable(${_helper_target} MACOSX_BUNDLE Runtime/Helper.cc)
  SET_EXECUTABLE_TARGET_PROPERTIES(${_helper_target})
@@ -66,8 +66,9 @@ add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
  COMMAND ${CMAKE_COMMAND} -E make_directory "${CEF_APP}/Contents/Resources"
  COMMAND ${CMAKE_COMMAND} -E copy "${NATIVE_LIB}" "${CEF_APP}/Contents/Frameworks/libOPNative.dylib"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/compose-observer.py" "${OP_ROOT}/ChatGPTNative/Services/MessageObserver.js" "${CEF_APP}/Contents/Resources/CEFObserver.js"
- COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ClinxDelivery.js" "${CEF_APP}/Contents/Resources/ClinxDelivery.js"
+ COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ExecutionQuery.js" "${CEF_APP}/Contents/Resources/ExecutionQuery.js"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/package-icon.py" "${OP_ROOT}/ChatGPTNative/Assets.xcassets/AppIcon.appiconset" "${CEF_APP}/Contents/Resources/OP.icns"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Resources/LICENSE-CEF.txt" "${CEF_APP}/Contents/Resources/LICENSE-CEF.txt"
+ COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Header" "${CEF_APP}/Contents/Resources/Header"
  VERBATIM)
 PRINT_CEF_CONFIG()

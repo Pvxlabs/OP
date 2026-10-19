@@ -4,8 +4,8 @@ Personal macOS ChatGPT client with a **Swift 6 / SwiftUI / AppKit native shell
 and CEF (Chromium) rendering backend**. It loads https://chatgpt.com/ directly,
 uses normal website sign-in, and does not use the OpenAI API or Electron.
 
-The current local delivery is **0.3.0**, installed as `/Applications/OP.app`.
-The owner accepted the updated window and everyday experience on 2026-10-19.
+The current local delivery is **0.3.1**, installed as `/Applications/OP.app`.
+The owner accepted the current Figma-matched header and everyday experience on Air on 2026-10-20.
 WebKit remains available as the 0.2.0 fallback; its source and historical tags are
 retained. This repository publishes source, tests and reviewed acceptance notes,
 not Chromium binaries, app bundles, login profiles or chat snapshots.
@@ -42,12 +42,15 @@ The native header is 40 pt with a bold refresh symbol, an inactive title treatme
 and native window controls. **页面 > 外观** offers 跟随系统 (default), 浅色 and 夜晚;
 the selection is remembered across launches and applies to all native windows and
 recovery panels. Light chrome uses #F9F9F9 with #313131 controls; night chrome uses
-#1C1C1C with #EEEEEE controls. The website keeps its own appearance setting.
+#1C1C1C with #A1A1AA active title/icons and a #6E6E6E inactive title.
+Night inactive hides the right icons as drawn in the owner-edited Figma design.
+Hover backgrounds are #2E2E2E with 4 pt corners. The website keeps its own appearance setting.
 
 See the [CEF build/runtime guide](Integration/CEF/README.md),
 [integration contract](docs/CEF-INTEGRATION-SPEC.md) and
 [acceptance record](docs/CEF-INTEGRATION-ACCEPTANCE.md).
-The latest 85 synthetic checks passed (81 core + 4 restart). A fresh first-turn DOM identity gap remains
+Synthetic acceptance for the simplified query action is recorded in
+[the acceptance notes](docs/CEF-INTEGRATION-ACCEPTANCE.md). A fresh first-turn DOM identity gap remains
 unresolved, and matched real display-frame/CPU/memory comparisons, some file/OAuth
 flows and distribution notarization are not fully accepted. Local capture cannot
 protect text that never reached the client or cannot be reliably attributed.
@@ -71,50 +74,26 @@ Missing/invalid configuration is rejected rather than opening an account-specifi
 example. Keep these values and raw results local. Synthetic offline/loopback
 fixtures need no account-linked IDs.
 
-## CLINX results in the original ordinary conversation
+## Query CLINX execution in the current conversation
 
-The installed app adds **收取** beside refresh in the native
-top bar. It opens and refreshes **CLINX 任务收件箱**. Automatic identification is
-enabled by default: no conversation pairing or per-task ID entry is required.
-The previous installed app is retained in a recoverable local backup.
+Click the **query icon** (square checkmark at night, tray in light mode) beside refresh to send this ordinary message in the current
+ChatGPT conversation:
 
-When a completed assistant turn mentions CLINX/Codex activity, OP sends one
-visibly labeled read-only identity request to ChatGPT in that same conversation.
-ChatGPT uses its actual tool context to return a nonce-tagged task/execution list;
-it is instructed to exclude quoted/example/status-only data, call no tools and
-execute nothing. OP accepts only the immediate completed response to its exact
-query, corroborates every selected task/execution through the real Observer, and
-automatically creates durable inbox bindings. This is AI source identification;
-Observer corroboration proves identities, not independent ChatGPT provenance.
+> 请通过 CLINX 查询本对话刚才派发的 Codex 任务，报告最新执行状态；如果已经结束，请读取并总结结果。不要重新派发任务。
 
-Select the existing CLINX Monitor connection or configure a private HTTPS Observer
-once. Tokens stay in Keychain. The inbox shows the human source-chat title and
-identification status; manual task fields remain collapsed under **高级：手动补充绑定**.
-Click top-bar **收取** to explicitly inspect the latest source context, including
-historical results. Background identification skips results predating activation.
-Unchanged/repeated collection never resends an identification request.
+ChatGPT uses the task context it already has to query CLINX and explain the
+result. OP does not identify task IDs, pair conversations, create bindings,
+configure Observer credentials, poll task status or send background messages.
+The old task inbox and automatic identification/delivery code have been removed.
+Existing local inbox files and Keychain entries are left untouched and unused.
 
-While OP runs, it polls every 15 seconds and saves exact final result summaries
-in its owner-only local inbox. Original conversation access, an empty composer,
-no attachments/modal and no active generation are required. Closed/unreadable
-conversations wait; use **打开原对话** to reopen them. Result receipt submission and
-the following assistant response are verified separately. Uncertain/interrupted
-queries or receipts only receive read-only verification, never automatic resend.
-This transfers the Observer's redacted summary, not the full Codex report.
-
-The 85-check synthetic suite includes automatic identification -> Observer
-corroboration -> binding -> original CEF result receipt -> assistant response,
-plus quote/empty lists, nonce mismatch, successor mismatch, history, deduplication
-and restart recovery, including collapsed long query messages and multiple source
-turns in one poll without lost sources or duplicate execution bindings. Real ordinary-chat
-acceptance also identified an existing execution in the original work chat,
-verified it through Observer, collected its historical result through top-bar
-收取 without ID entry, and observed ChatGPT respond in that same conversation.
-The capability-only negative case returned an empty list and created no binding.
-No new execution was started for testing. See [the automatic identification contract](docs/CLINX-AUTO-BINDING-SPEC.md)
-and [the original inbox contract](docs/CLINX-REPLY-SPEC.md).
-Self-tests use Chromium's mock Keychain only in a separately identified app; the
-production account/profile always uses the system Keychain.
+The button requires a loaded conversation and an empty composer with no
+attachments, visible modal or active generation. It preserves drafts and explains
+why it cannot send. It disables while a query is being sent and verifies a new
+matching user bubble; uncertain sends are never automatically retried. After a
+finished query, another explicit click can query again. No private website API
+is used. Night mode, reply protection, local copies and browser features remain.
+Self-tests use an isolated app/profile and synthetic loopback conversations.
 
 ## WebKit fallback — 0.2.0
 

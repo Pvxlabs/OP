@@ -22,8 +22,7 @@ try:
         args = ['open','-n','-W',str(app),'--args','--self-test','--use-mock-keychain','--self-test-origin='+origin,'--evidence='+str(evidence)]
         if phase == 'restart': args += ['--restart-check']
         began=time.monotonic(); process=subprocess.Popen(args)
-        # The expanded real-CEF suite includes six separate identification chats
-        # and their bounded shutdown waits. Keep the fixture alive for that work.
+        # Includes real composer guard cases and bounded native shutdown waits.
         while process.poll() is None and time.monotonic()-began < 180:
             rows=[]
             for line in subprocess.check_output(['ps','-axo','pid=,ppid=,%cpu=,rss=,comm='], text=True).splitlines():

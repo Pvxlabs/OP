@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import SwiftUI
 
 private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "OP CEF Integration"
@@ -25,20 +26,67 @@ enum ProductAppearance: String, CaseIterable {
 // is inactive. Resolve the native chrome together in the view's actual appearance.
 private final class TitleAppearanceView: NSView {
     var appearanceChanged: (() -> Void)?
+    var layoutChanged: (() -> Void)?
+    override func layout() {
+        super.layout()
+        layoutChanged?()
+    }
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         appearanceChanged?()
     }
 }
 
+// A bordered NSButton ignores contentTintColor. Keep its normal input and
+// accessibility behavior, and draw only the hover surface behind a borderless icon.
+private final class HeaderButton: NSButton {
+    // Accessory button alignment insets otherwise enlarge the actual frame
+    // beyond its constrained size, letting the hover surface reach the bar edge.
+    override var alignmentRectInsets: NSEdgeInsets { .init(top: 0, left: 0, bottom: 0, right: 0) }
+    private var hoverArea: NSTrackingArea?
+    private var hovering = false
+    var dark = false { didSet { needsDisplay = true } }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area); hoverArea = area
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
+    override func draw(_ dirtyRect: NSRect) {
+        let surface = NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        surface.addClip()
+        if isEnabled && (hovering || isHighlighted) {
+            (dark ? NSColor(white: 46.0 / 255, alpha: 1) : NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.16 : 0.08)).setFill()
+            surface.fill()
+        }
+        super.draw(dirtyRect)
+    }
+}
+
 @MainActor final class ProductWindow: NSWindowController, NSWindowDelegate {
+    private static let headerFont: NSFont = {
+        let url = Bundle.main.url(forResource: "Inter-Bold", withExtension: "otf", subdirectory: "Header")!
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        return NSFont(name: "Inter-Bold", size: 13)!
+    }()
     let workspace: CEFWorkspace
     let titleLabel = NSTextField(labelWithString: "OP")
-    let refreshButton = NSButton()
-    let collectButton = NSButton()
+    let refreshButton: NSButton = HeaderButton()
+    let collectButton: NSButton = HeaderButton()
+    private(set) var queryReport: ExecutionQueryReport?
     var statusPopover: NSPopover?
     var mayClose = false
     private var standardControlFrames: [(NSButton, NSRect)] = []
+    private var titleLeading: NSLayoutConstraint!
+    private var titleBaseline: NSLayoutConstraint!
+    private var buttonTops: [NSLayoutConstraint] = []
+    private var refreshTrailing: NSLayoutConstraint!
+    private var headerImages: [String: NSImage] = [:]
     init(library: SnapshotLibrary, url: URL?) {
         workspace = CEFWorkspace(library: library)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
@@ -49,24 +97,28 @@ private final class TitleAppearanceView: NSView {
         window.titlebarSeparatorStyle = .none
         window.isReleasedWhenClosed = false; window.minSize = NSSize(width: 700, height: 520)
         window.delegate = self
-        // Keep system window controls in their native titlebar; a bottom accessory
-        // extends its measured 32 pt height to 40 pt without an NSToolbar minimum.
+        // Keep system controls and the 40 pt titlebar in native AppKit.
         let accessory = NSTitlebarAccessoryViewController()
         accessory.layoutAttribute = .leading
-        let titleArea = TitleAppearanceView(frame: NSRect(x: 0, y: 0, width: 410, height: 32))
+        let titleArea = TitleAppearanceView(frame: NSRect(x: 0, y: 0, width: 410, height: 40))
         titleArea.appearanceChanged = { [weak self] in self?.updateTitleAppearance() }
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleArea.layoutChanged = { [weak self] in self?.positionStandardControls() }
+        titleLabel.font = Self.headerFont
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.isBordered = false; titleLabel.isBezeled = false; titleLabel.drawsBackground = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleArea.addSubview(titleLabel)
+        titleLeading = titleLabel.leadingAnchor.constraint(equalTo: titleArea.leadingAnchor, constant: 12)
+        titleBaseline = titleLabel.firstBaselineAnchor.constraint(equalTo: titleArea.topAnchor, constant: 21.727)
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: titleArea.leadingAnchor, constant: 12),
+            titleLeading,
             titleLabel.trailingAnchor.constraint(equalTo: titleArea.trailingAnchor, constant: -12),
-            titleLabel.centerYAnchor.constraint(equalTo: titleArea.centerYAnchor, constant: 2)
+            titleBaseline
         ])
         accessory.view = titleArea
         window.addTitlebarAccessoryViewController(accessory)
+        // Leading/trailing accessories are laid out in AppKit's 32 pt row.
+        // Extend the native titlebar to the design's 40 pt height below that row.
         let heightAccessory = NSTitlebarAccessoryViewController()
         heightAccessory.layoutAttribute = .bottom
         heightAccessory.automaticallyAdjustsSize = false
@@ -75,35 +127,39 @@ private final class TitleAppearanceView: NSView {
         window.addTitlebarAccessoryViewController(heightAccessory)
         let refreshAccessory = NSTitlebarAccessoryViewController()
         refreshAccessory.layoutAttribute = .trailing
-        let refreshArea = NSView(frame: NSRect(x: 0, y: 0, width: 128, height: 32))
-        collectButton.title = "收取"
-        collectButton.image = NSImage(systemSymbolName: "tray.and.arrow.down", accessibilityDescription: nil)
-        collectButton.imagePosition = .imageLeading
-        collectButton.isBordered = false
-        collectButton.font = .systemFont(ofSize: 12, weight: .semibold)
-        collectButton.target = self; collectButton.action = #selector(collectClinx)
-        collectButton.toolTip = "收取 CLINX 任务结果"
-        collectButton.setAccessibilityLabel("收取 CLINX 任务结果")
+        let refreshArea = NSView(frame: NSRect(x: 0, y: 0, width: 84, height: 40))
+        for name in ["CollectDark", "CollectLight", "RefreshDark", "RefreshLight"] {
+            let image = NSImage(contentsOf: Bundle.main.url(forResource: name, withExtension: "pdf", subdirectory: "Header")!)!
+            image.isTemplate = true
+            headerImages[name] = image
+        }
+        collectButton.target = self; collectButton.action = #selector(queryExecution)
+        collectButton.toolTip = "在当前对话查询 CLINX 执行情况"
+        collectButton.setAccessibilityLabel("在当前对话查询 CLINX 执行情况")
         collectButton.translatesAutoresizingMaskIntoConstraints = false
         refreshArea.addSubview(collectButton)
-        refreshButton.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "刷新页面")
+        refreshButton.setAccessibilityLabel("刷新页面")
         refreshButton.target = self; refreshButton.action = #selector(reload)
-        refreshButton.imagePosition = .imageOnly
-        refreshButton.isBordered = false
-        refreshButton.symbolConfiguration = .init(pointSize: 14, weight: .bold)
         refreshButton.toolTip = "刷新页面 (⌘R)"
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
         refreshArea.addSubview(refreshButton)
+        for button in [collectButton, refreshButton] {
+            button.title = ""
+            button.imagePosition = .imageOnly
+            button.bezelStyle = .accessoryBarAction
+            button.isBordered = false
+            (button.cell as? NSButtonCell)?.highlightsBy = []
+        }
+        buttonTops = [collectButton, refreshButton].map { $0.topAnchor.constraint(equalTo: refreshArea.topAnchor, constant: 3) }
+        refreshTrailing = refreshButton.trailingAnchor.constraint(equalTo: refreshArea.trailingAnchor, constant: -8)
         NSLayoutConstraint.activate([
             collectButton.leadingAnchor.constraint(equalTo: refreshArea.leadingAnchor, constant: 4),
-            collectButton.centerYAnchor.constraint(equalTo: refreshArea.centerYAnchor, constant: 2),
-            collectButton.widthAnchor.constraint(equalToConstant: 72),
-            collectButton.heightAnchor.constraint(equalToConstant: 28),
-            refreshButton.trailingAnchor.constraint(equalTo: refreshArea.trailingAnchor, constant: -10),
-            refreshButton.centerYAnchor.constraint(equalTo: refreshArea.centerYAnchor, constant: 2),
-            refreshButton.widthAnchor.constraint(equalToConstant: 28),
-            refreshButton.heightAnchor.constraint(equalToConstant: 28)
-        ])
+            collectButton.widthAnchor.constraint(equalToConstant: 32),
+            collectButton.heightAnchor.constraint(equalToConstant: 30),
+            refreshTrailing,
+            refreshButton.widthAnchor.constraint(equalToConstant: 32),
+            refreshButton.heightAnchor.constraint(equalToConstant: 30)
+        ] + buttonTops)
         refreshAccessory.view = refreshArea
         window.addTitlebarAccessoryViewController(refreshAccessory)
         let hosting = NSHostingView(rootView: ProductView(workspace: workspace))
@@ -115,6 +171,9 @@ private final class TitleAppearanceView: NSView {
         workspace.titleChanged = { [weak self] in self?.updateTitle() }
         window.makeKeyAndOrderFront(nil)
         window.contentView?.superview?.layoutSubtreeIfNeeded()
+        // The trailing accessory's clip view remains 32 pt tall even though
+        // the titlebar is 40 pt. Allow the designed hover surface through it.
+        refreshArea.superview?.clipsToBounds = false
         standardControlFrames = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap {
             guard let button = window.standardWindowButton($0) else { return nil }
             return (button, button.frame)
@@ -133,18 +192,36 @@ private final class TitleAppearanceView: NSView {
         let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         window.backgroundColor = NSColor(white: (dark ? 28.0 : 249.0) / 255, alpha: 1)
         let active = window.isKeyWindow && NSApp.isActive
-        titleLabel.textColor = NSColor(white: (dark ? (active ? 238.0 : 174.0) : (active ? 49.0 : 112.0)) / 255, alpha: 1)
-        // Avoid accessory-bar vibrancy choosing a light glyph over a light
-        // hard-coded background, and keep refresh readable in inactive windows.
-        refreshButton.contentTintColor = NSColor(white: (dark ? 238.0 : 49.0) / 255, alpha: 1)
-        collectButton.contentTintColor = refreshButton.contentTintColor
+        // Figma: "02 你的调整区". Night inactive intentionally has no right icons.
+        titleLabel.textColor = dark && active
+            ? NSColor(srgbRed: 161.0 / 255, green: 161.0 / 255, blue: 170.0 / 255, alpha: 1)
+            : NSColor(white: (dark ? 110.0 : (active ? 49.0 : 112.0)) / 255, alpha: 1)
+        titleLeading.constant = dark ? 17 : 12
+        titleBaseline.constant = dark ? 24.727 : 21.727
+        buttonTops.forEach { $0.constant = dark ? 5.002 : 3 }
+        refreshTrailing.constant = dark ? -12 : -8
+        collectButton.image = headerImages[dark ? "CollectDark" : "CollectLight"]
+        refreshButton.image = headerImages[dark ? "RefreshDark" : "RefreshLight"]
+        for button in [collectButton, refreshButton] {
+            button.contentTintColor = titleLabel.textColor
+            button.isHidden = dark && !active
+            (button as? HeaderButton)?.dark = dark
+        }
+        positionStandardControls()
+        DispatchQueue.main.async { [weak self] in self?.positionStandardControls() }
     }
     func windowDidBecomeKey(_ notification: Notification) { updateTitleAppearance() }
     func windowDidResignKey(_ notification: Notification) { updateTitleAppearance() }
     private func positionStandardControls() {
         guard window?.styleMask.contains(.fullScreen) == false else { return }
-        for (button, original) in standardControlFrames {
-            button.setFrameOrigin(original.origin.applying(CGAffineTransform(translationX: 2, y: button.superview?.isFlipped == true ? 2 : -2)))
+        guard let window else { return }
+        let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        for (index, entry) in standardControlFrames.enumerated() {
+            let (button, _) = entry
+            guard let parent = button.superview else { continue }
+            let center = parent.convert(NSPoint(x: (dark ? 18.5 : 16) + CGFloat(index) * 23,
+                y: window.frame.height - (dark ? 19.5 : 16)), from: nil)
+            button.setFrameOrigin(NSPoint(x: center.x - button.frame.width / 2, y: center.y - button.frame.height / 2))
         }
     }
     func windowDidResize(_ notification: Notification) {
@@ -157,11 +234,31 @@ private final class TitleAppearanceView: NSView {
     @objc func goForward() { if let s = workspace.active { op_cef_action(s.browser, 2) } }
     @objc func reload() { if let s = workspace.active { s.error = nil; s.readableConversation = nil; op_cef_action(s.browser, 0) } }
     @objc func recover() { workspace.recover() }
-    @objc func collectClinx() {
-        window?.makeKeyAndOrderFront(nil)
-        NativeProduct.shared.openClinxInbox()
-        let conversation = workspace.active?.conversation
-        Task { await NativeProduct.shared.clinxInbox.refresh(identifyConversation: conversation) }
+    @objc func queryExecution() {
+        guard collectButton.isEnabled else { return }
+        guard !workspace.showingLocal, let session = workspace.active else {
+            showQueryFailure("请先打开要查询的 ChatGPT 对话。")
+            return
+        }
+        queryReport = nil
+        collectButton.isEnabled = false
+        collectButton.toolTip = "正在发送查询…"
+        Task { [weak self] in
+            let report = await session.queryExecution()
+            guard let self else { return }
+            queryReport = report
+            collectButton.isEnabled = true
+            collectButton.toolTip = report.status == "sent" ? "查询已发送；再次点击可重新查询执行情况" : report.reason
+            if report.status != "sent" { showQueryFailure(report.reason) }
+        }
+    }
+    private func showQueryFailure(_ reason: String) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "查询未确认发送"
+        alert.informativeText = reason
+        alert.addButton(withTitle: "好")
+        alert.beginSheetModal(for: window)
     }
     @objc func newWindow() { NativeProduct.shared.newWindow() }
     @objc func protection(_ sender: Any?) {
@@ -202,16 +299,10 @@ private final class TitleAppearanceView: NSView {
     var quitting = false
     var statusItem: NSStatusItem?
     var selfTest: CEFIntegrationTests?
-    lazy var clinxInbox = ClinxInbox()
-    private var clinxWindow: NSWindowController?
     private(set) var appearance = ProductAppearance(rawValue: UserDefaults.standard.string(forKey: "nativeAppearance") ?? "") ?? .system
     private var appearanceItems: [NSMenuItem] = []
     func nextKey() -> Int64 { key += 1; return key }
     func start() {
-        let siteCheck = CommandLine.arguments.first(where: { $0.hasPrefix("--clinx-site-check=") })
-            .map { String($0.dropFirst("--clinx-site-check=".count)).lowercased() }
-        let siteEvidence = CommandLine.arguments.first(where: { $0.hasPrefix("--evidence=") })
-            .map { String($0.dropFirst("--evidence=".count)) }
         NSApp.delegate = self; NSApp.setActivationPolicy(.regular)
         NSApp.appearance = appearance.native
         let menu = NSMenu()
@@ -239,7 +330,7 @@ private final class TitleAppearanceView: NSView {
             appearanceItems.append(choice)
         }
         item(page, "回复保护状态…", #selector(protection))
-        item(page, "CLINX 任务收件箱…", #selector(openClinxInbox))
+        item(page, "查询 CLINX 执行情况", #selector(queryExecution))
         item(page, "诊断消息识别（仅元数据）", #selector(diagnose))
         NSApp.mainMenu = menu
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -247,14 +338,11 @@ private final class TitleAppearanceView: NSView {
         let quick = NSMenu(title: nativeAppName)
         item(quick, "新窗口", #selector(newWindow)); item(quick, "本地回复副本…", #selector(recover))
         item(quick, "回复保护状态…", #selector(protection)); quick.addItem(.separator())
-        item(quick, "CLINX 任务收件箱…", #selector(openClinxInbox))
+        item(quick, "查询 CLINX 执行情况", #selector(queryExecution))
         item(quick, "退出 " + nativeAppName, #selector(quit))
         status.menu = quick; statusItem = status
         if CommandLine.arguments.contains("--self-test") {
             let suite = CEFIntegrationTests(product: self); selfTest = suite; Task { await suite.run() }
-        } else if let siteCheck, SnapshotIdentity.valid(siteCheck), let siteEvidence, siteEvidence.hasPrefix("/") {
-            openWindow(url: URL(string: "https://chatgpt.com/c/" + siteCheck))
-            Task { await ClinxSiteCheck.run(product: self, conversation: siteCheck, evidence: URL(fileURLWithPath: siteEvidence)) }
         } else if let argument = CommandLine.arguments.first(where: { $0.hasPrefix("--open-conversation=") }),
                   SnapshotIdentity.valid(String(argument.dropFirst("--open-conversation=".count))) {
             let id = String(argument.dropFirst("--open-conversation=".count)).lowercased()
@@ -265,7 +353,6 @@ private final class TitleAppearanceView: NSView {
             openWindow(url: restore)
         }
         NSApp.activate(ignoringOtherApps: true)
-        if !CommandLine.arguments.contains("--self-test") { clinxInbox.start() }
     }
     @objc func newWindow() { openWindow(url: URL(string: "https://chatgpt.com/")) }
     func openWindow(url: URL?) { let scene = ProductWindow(library: library, url: url); windows.append(scene) }
@@ -287,29 +374,10 @@ private final class TitleAppearanceView: NSView {
         for scene in windows { scene.updateTitleAppearance() }
     }
     @objc func protection() { focused?.protection(nil) }
-    @objc func openClinxInbox() {
-        let conversation = focused?.workspace.active?.conversation
-        if clinxWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "CLINX 任务收件箱"; window.isReleasedWhenClosed = false; window.center()
-            window.minSize = NSSize(width: 840, height: 720)
-            clinxWindow = NSWindowController(window: window)
-        }
-        let hosting = NSHostingView(rootView: ClinxInboxView(inbox: clinxInbox, conversation: conversation,
-            conversationTitle: focused?.workspace.active?.title) { [weak self] id in
-            guard let self else { return }
-            if let scene = windows.first(where: { $0.workspace.active?.conversation == id }) { scene.window?.makeKeyAndOrderFront(nil) }
-            else { openWindow(url: URL(string: "https://chatgpt.com/c/" + id)) }
-        })
-        hosting.sizingOptions = []
-        clinxWindow?.window?.contentView = hosting
-        clinxWindow?.showWindow(nil); clinxWindow?.window?.makeKeyAndOrderFront(nil)
-    }
+    @objc func queryExecution() { focused?.queryExecution() }
     @objc func diagnose() { if let session = focused?.workspace.active { op_cef_action(session.browser, 4) } }
     @objc func quit() {
         guard !quitting else { return }; quitting = true
-        clinxInbox.stop()
         Task { for window in windows { await window.workspace.close() }; op_cef_quit() }
     }
     func remove(_ window: ProductWindow) { windows.removeAll { $0 === window } }
@@ -334,7 +402,7 @@ private final class TitleAppearanceView: NSView {
     let name = String(cString: event), value = String(cString: value)
     NativeProduct.shared.selfTest?.event(name, browser: browser, value: value)
     switch name {
-    case "clinxDelivery": session.deliveryResult(value)
+    case "executionQuery": session.queryResult(value)
     case "diagnostic":
         if let raw = value.data(using: .utf8), var object = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] {
             if let window = NativeProduct.shared.focused?.window {

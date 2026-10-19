@@ -13,7 +13,7 @@ void op_cef_enabled(int32_t browser, bool enabled);
 void op_cef_ack(int32_t browser, int32_t context, int32_t request, bool accepted);
 void op_cef_quit(void);
 void op_cef_test(int32_t browser, int32_t action);
-void op_cef_clinx(int32_t browser, const char *payload);
+void op_cef_query(int32_t browser, const char *payload);
 void op_native_start(void);
 void op_native_quit(void);
 void op_native_event(int64_t key, int32_t browser, const char *event, const char *value);

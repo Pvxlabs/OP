@@ -1,5 +1,10 @@
 # CLINX automatic task identification in ordinary ChatGPT
 
+> Historical contract, superseded on 2026-10-20 by the simplified manual query
+> action in [CEF-INTEGRATION-SPEC.md](CEF-INTEGRATION-SPEC.md). Automatic
+> identification, pairing/binding, Observer polling and the task inbox are removed.
+
+
 Date: 2026-10-20 Asia/Shanghai. Status: IMPLEMENTATION PASS / FIXTURE PASS / BOUNDED REAL-CHAT ACCEPTANCE PASS.
 
 ## Objective and boundaries

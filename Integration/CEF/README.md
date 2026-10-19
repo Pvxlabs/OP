@@ -49,7 +49,18 @@ File dialogs and clipboard use normal Chromium/AppKit handling; downloads explic
 
 ## Native header
 
-Native 收取 and refresh controls sit at top right. 收取 opens the CLINX inbox and checks the current ordinary conversation without manual task IDs; see [the automatic identification contract](../../docs/CLINX-AUTO-BINDING-SPEC.md). Startup is website-first and never automatically displays local copies; SQLite/recent-list refresh runs after navigation is requested. Plain text and requested 40 pt measured windowed titlebar; AppKit still owns the red/yellow/green controls. 页面 > 外观 selects 跟随系统 (default), 浅色 or 夜晚 and persists the choice for all native windows and recovery UI. Light uses #F9F9F9 / #313131; night uses #1C1C1C / #EEEEEE. Refresh remains readable in inactive windows. Appearance switching does not reload or restyle the official website, which retains its own theme preference. Commands remain in File/Page menus and the menu bar entry. The current machine is macOS 26.6.2, built with Xcode 27 SDK. This does not verify macOS 27 visual appearance.
+Native icon-only query and refresh controls sit at top right. Header styling follows the owner-edited Figma “02 你的调整区” in file `xWHKogXYl3WijpAvXxn7MP`: bundled 13 pt Inter Bold and exact exported vector glyphs, 40 pt titlebar, night #1C1C1C / #A1A1AA, hover #2E2E2E with 4 pt corners and 32 x 30 pt bounds. Night inactive uses #6E6E6E title and hides both right icons as drawn. Light active remains #F9F9F9 / #313131 with the original tray glyph. Native traffic-light and title/button positions follow the exported coordinates; full-screen controls remain system-managed. See [the exact contract](../../docs/CEF-INTEGRATION-SPEC.md).
+
+The query button sends a fixed execution-status message in the current ordinary ChatGPT conversation; ChatGPT looks up the task through CLINX using its existing context. OP has no task inbox, ID identification, pairing/binding, Observer configuration or background polling. Drafts, attachments, active generation and visible modals block sending with a native explanation; uncertain sends are never auto-retried. Startup is website-first and never automatically displays local copies. 页面 > 外观 selects 跟随系统 (default), 浅色 or 夜晚 and persists the choice for all native windows and recovery UI without reloading or restyling the official website. Commands remain in File/Page menus and the menu bar entry. macOS 27 visual appearance remains unverified.
+
+## Installed application registration
+
+After an installed bundle replacement, `./script/refresh-op-registration.py`
+refreshes only OP registration metadata. It retains backup apps and data while
+unregistering their known duplicate LaunchServices entries. It verifies signing
+before refreshing the installed CEF identity and Spotlight. An automation
+client that already cached a replaced bundle may still require its own restart;
+this does not justify changing OP's bundle/data identity.
 
 ## Signing and upgrades
 
