@@ -3,9 +3,39 @@ import SwiftUI
 
 private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "OP CEF Integration"
 
+enum ProductAppearance: String, CaseIterable {
+    case system, light, dark
+    var title: String {
+        switch self {
+        case .system: "跟随系统"
+        case .light: "浅色"
+        case .dark: "夜晚"
+        }
+    }
+    var native: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
+// System appearance can change while a window is open, including when the app
+// is inactive. Resolve the native chrome together in the view's actual appearance.
+private final class TitleAppearanceView: NSView {
+    var appearanceChanged: (() -> Void)?
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        appearanceChanged?()
+    }
+}
+
 @MainActor final class ProductWindow: NSWindowController, NSWindowDelegate {
     let workspace: CEFWorkspace
     let titleLabel = NSTextField(labelWithString: "OP")
+    let refreshButton = NSButton()
+    let collectButton = NSButton()
     var statusPopover: NSPopover?
     var mayClose = false
     private var standardControlFrames: [(NSButton, NSRect)] = []
@@ -16,7 +46,6 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
         super.init(window: window)
         window.title = nativeAppName; window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true; window.toolbarStyle = .unified
-        window.backgroundColor = NSColor(srgbRed: 249.0/255, green: 249.0/255, blue: 249.0/255, alpha: 1)
         window.titlebarSeparatorStyle = .none
         window.isReleasedWhenClosed = false; window.minSize = NSSize(width: 700, height: 520)
         window.delegate = self
@@ -24,9 +53,9 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
         // extends its measured 32 pt height to 40 pt without an NSToolbar minimum.
         let accessory = NSTitlebarAccessoryViewController()
         accessory.layoutAttribute = .leading
-        let titleArea = NSView(frame: NSRect(x: 0, y: 0, width: 490, height: 32))
+        let titleArea = TitleAppearanceView(frame: NSRect(x: 0, y: 0, width: 410, height: 32))
+        titleArea.appearanceChanged = { [weak self] in self?.updateTitleAppearance() }
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = NSColor(srgbRed: 49.0/255, green: 49.0/255, blue: 49.0/255, alpha: 1)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.isBordered = false; titleLabel.isBezeled = false; titleLabel.drawsBackground = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -46,18 +75,31 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
         window.addTitlebarAccessoryViewController(heightAccessory)
         let refreshAccessory = NSTitlebarAccessoryViewController()
         refreshAccessory.layoutAttribute = .trailing
-        let refreshArea = NSView(frame: NSRect(x: 0, y: 0, width: 48, height: 32))
-        let refreshButton = NSButton(image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "刷新页面")!, target: self, action: #selector(reload))
-        refreshButton.bezelStyle = .accessoryBarAction
-        refreshButton.isBordered = true
-        refreshButton.showsBorderOnlyWhileMouseInside = true
+        let refreshArea = NSView(frame: NSRect(x: 0, y: 0, width: 128, height: 32))
+        collectButton.title = "收取"
+        collectButton.image = NSImage(systemSymbolName: "tray.and.arrow.down", accessibilityDescription: nil)
+        collectButton.imagePosition = .imageLeading
+        collectButton.isBordered = false
+        collectButton.font = .systemFont(ofSize: 12, weight: .semibold)
+        collectButton.target = self; collectButton.action = #selector(collectClinx)
+        collectButton.toolTip = "收取 CLINX 任务结果"
+        collectButton.setAccessibilityLabel("收取 CLINX 任务结果")
+        collectButton.translatesAutoresizingMaskIntoConstraints = false
+        refreshArea.addSubview(collectButton)
+        refreshButton.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "刷新页面")
+        refreshButton.target = self; refreshButton.action = #selector(reload)
+        refreshButton.imagePosition = .imageOnly
+        refreshButton.isBordered = false
         refreshButton.symbolConfiguration = .init(pointSize: 14, weight: .bold)
-        refreshButton.contentTintColor = NSColor(srgbRed: 49.0/255, green: 49.0/255, blue: 49.0/255, alpha: 1)
         refreshButton.toolTip = "刷新页面 (⌘R)"
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
         refreshArea.addSubview(refreshButton)
         NSLayoutConstraint.activate([
-            refreshButton.centerXAnchor.constraint(equalTo: refreshArea.centerXAnchor),
+            collectButton.leadingAnchor.constraint(equalTo: refreshArea.leadingAnchor, constant: 4),
+            collectButton.centerYAnchor.constraint(equalTo: refreshArea.centerYAnchor, constant: 2),
+            collectButton.widthAnchor.constraint(equalToConstant: 72),
+            collectButton.heightAnchor.constraint(equalToConstant: 28),
+            refreshButton.trailingAnchor.constraint(equalTo: refreshArea.trailingAnchor, constant: -10),
             refreshButton.centerYAnchor.constraint(equalTo: refreshArea.centerYAnchor, constant: 2),
             refreshButton.widthAnchor.constraint(equalToConstant: 28),
             refreshButton.heightAnchor.constraint(equalToConstant: 28)
@@ -87,8 +129,15 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
         window?.title = nativeAppName + " — " + titleLabel.stringValue
     }
     func updateTitleAppearance() {
-        let color = NSColor(srgbRed: 49.0/255, green: 49.0/255, blue: 49.0/255, alpha: 1)
-        titleLabel.textColor = color.withAlphaComponent(window?.isKeyWindow == true && NSApp.isActive ? 1 : 0.4)
+        guard let window else { return }
+        let dark = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        window.backgroundColor = NSColor(white: (dark ? 28.0 : 249.0) / 255, alpha: 1)
+        let active = window.isKeyWindow && NSApp.isActive
+        titleLabel.textColor = NSColor(white: (dark ? (active ? 238.0 : 174.0) : (active ? 49.0 : 112.0)) / 255, alpha: 1)
+        // Avoid accessory-bar vibrancy choosing a light glyph over a light
+        // hard-coded background, and keep refresh readable in inactive windows.
+        refreshButton.contentTintColor = NSColor(white: (dark ? 238.0 : 49.0) / 255, alpha: 1)
+        collectButton.contentTintColor = refreshButton.contentTintColor
     }
     func windowDidBecomeKey(_ notification: Notification) { updateTitleAppearance() }
     func windowDidResignKey(_ notification: Notification) { updateTitleAppearance() }
@@ -108,6 +157,12 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
     @objc func goForward() { if let s = workspace.active { op_cef_action(s.browser, 2) } }
     @objc func reload() { if let s = workspace.active { s.error = nil; s.readableConversation = nil; op_cef_action(s.browser, 0) } }
     @objc func recover() { workspace.recover() }
+    @objc func collectClinx() {
+        window?.makeKeyAndOrderFront(nil)
+        NativeProduct.shared.openClinxInbox()
+        let conversation = workspace.active?.conversation
+        Task { await NativeProduct.shared.clinxInbox.refresh(identifyConversation: conversation) }
+    }
     @objc func newWindow() { NativeProduct.shared.newWindow() }
     @objc func protection(_ sender: Any?) {
         let popover = NSPopover(); popover.behavior = .transient
@@ -147,9 +202,18 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
     var quitting = false
     var statusItem: NSStatusItem?
     var selfTest: CEFIntegrationTests?
+    lazy var clinxInbox = ClinxInbox()
+    private var clinxWindow: NSWindowController?
+    private(set) var appearance = ProductAppearance(rawValue: UserDefaults.standard.string(forKey: "nativeAppearance") ?? "") ?? .system
+    private var appearanceItems: [NSMenuItem] = []
     func nextKey() -> Int64 { key += 1; return key }
     func start() {
+        let siteCheck = CommandLine.arguments.first(where: { $0.hasPrefix("--clinx-site-check=") })
+            .map { String($0.dropFirst("--clinx-site-check=".count)).lowercased() }
+        let siteEvidence = CommandLine.arguments.first(where: { $0.hasPrefix("--evidence=") })
+            .map { String($0.dropFirst("--evidence=".count)) }
         NSApp.delegate = self; NSApp.setActivationPolicy(.regular)
+        NSApp.appearance = appearance.native
         let menu = NSMenu()
         func submenu(_ name: String) -> NSMenu {
             let root = NSMenuItem(); root.submenu = NSMenu(title: name); menu.addItem(root); return root.submenu!
@@ -165,7 +229,17 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
             edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
         }
         let page = submenu("页面"); item(page, "刷新", #selector(reload), "r"); item(page, "后退", #selector(back), "["); item(page, "前进", #selector(forward), "]")
+        let appearanceMenu = NSMenu(title: "外观")
+        let appearanceRoot = NSMenuItem(title: "外观", action: nil, keyEquivalent: "")
+        appearanceRoot.submenu = appearanceMenu; page.addItem(appearanceRoot)
+        for mode in ProductAppearance.allCases {
+            let choice = appearanceMenu.addItem(withTitle: mode.title, action: #selector(selectAppearance(_:)), keyEquivalent: "")
+            choice.target = self; choice.representedObject = mode.rawValue
+            choice.state = mode == appearance ? .on : .off
+            appearanceItems.append(choice)
+        }
         item(page, "回复保护状态…", #selector(protection))
+        item(page, "CLINX 任务收件箱…", #selector(openClinxInbox))
         item(page, "诊断消息识别（仅元数据）", #selector(diagnose))
         NSApp.mainMenu = menu
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -173,10 +247,14 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
         let quick = NSMenu(title: nativeAppName)
         item(quick, "新窗口", #selector(newWindow)); item(quick, "本地回复副本…", #selector(recover))
         item(quick, "回复保护状态…", #selector(protection)); quick.addItem(.separator())
+        item(quick, "CLINX 任务收件箱…", #selector(openClinxInbox))
         item(quick, "退出 " + nativeAppName, #selector(quit))
         status.menu = quick; statusItem = status
         if CommandLine.arguments.contains("--self-test") {
             let suite = CEFIntegrationTests(product: self); selfTest = suite; Task { await suite.run() }
+        } else if let siteCheck, SnapshotIdentity.valid(siteCheck), let siteEvidence, siteEvidence.hasPrefix("/") {
+            openWindow(url: URL(string: "https://chatgpt.com/c/" + siteCheck))
+            Task { await ClinxSiteCheck.run(product: self, conversation: siteCheck, evidence: URL(fileURLWithPath: siteEvidence)) }
         } else if let argument = CommandLine.arguments.first(where: { $0.hasPrefix("--open-conversation=") }),
                   SnapshotIdentity.valid(String(argument.dropFirst("--open-conversation=".count))) {
             let id = String(argument.dropFirst("--open-conversation=".count)).lowercased()
@@ -187,19 +265,51 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
             openWindow(url: restore)
         }
         NSApp.activate(ignoringOtherApps: true)
+        if !CommandLine.arguments.contains("--self-test") { clinxInbox.start() }
     }
     @objc func newWindow() { openWindow(url: URL(string: "https://chatgpt.com/")) }
     func openWindow(url: URL?) { let scene = ProductWindow(library: library, url: url); windows.append(scene) }
     var focused: ProductWindow? { (NSApp.keyWindow?.windowController as? ProductWindow) ?? windows.last }
-    @objc func closeWindow() { focused?.window?.performClose(nil) }
+    @objc func closeWindow() { NSApp.keyWindow?.performClose(nil) }
     @objc func recover() { focused?.recover() }
     @objc func reload() { focused?.reload() }
     @objc func back() { focused?.goBack() }
     @objc func forward() { focused?.goForward() }
+    @objc func selectAppearance(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String, let mode = ProductAppearance(rawValue: value) else { return }
+        setAppearance(mode)
+    }
+    func setAppearance(_ mode: ProductAppearance) {
+        appearance = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "nativeAppearance")
+        NSApp.appearance = mode.native
+        for item in appearanceItems { item.state = item.representedObject as? String == mode.rawValue ? .on : .off }
+        for scene in windows { scene.updateTitleAppearance() }
+    }
     @objc func protection() { focused?.protection(nil) }
+    @objc func openClinxInbox() {
+        let conversation = focused?.workspace.active?.conversation
+        if clinxWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.title = "CLINX 任务收件箱"; window.isReleasedWhenClosed = false; window.center()
+            window.minSize = NSSize(width: 840, height: 720)
+            clinxWindow = NSWindowController(window: window)
+        }
+        let hosting = NSHostingView(rootView: ClinxInboxView(inbox: clinxInbox, conversation: conversation,
+            conversationTitle: focused?.workspace.active?.title) { [weak self] id in
+            guard let self else { return }
+            if let scene = windows.first(where: { $0.workspace.active?.conversation == id }) { scene.window?.makeKeyAndOrderFront(nil) }
+            else { openWindow(url: URL(string: "https://chatgpt.com/c/" + id)) }
+        })
+        hosting.sizingOptions = []
+        clinxWindow?.window?.contentView = hosting
+        clinxWindow?.showWindow(nil); clinxWindow?.window?.makeKeyAndOrderFront(nil)
+    }
     @objc func diagnose() { if let session = focused?.workspace.active { op_cef_action(session.browser, 4) } }
     @objc func quit() {
         guard !quitting else { return }; quitting = true
+        clinxInbox.stop()
         Task { for window in windows { await window.workspace.close() }; op_cef_quit() }
     }
     func remove(_ window: ProductWindow) { windows.removeAll { $0 === window } }
@@ -224,6 +334,7 @@ private let nativeAppName = Bundle.main.object(forInfoDictionaryKey: "CFBundleNa
     let name = String(cString: event), value = String(cString: value)
     NativeProduct.shared.selfTest?.event(name, browser: browser, value: value)
     switch name {
+    case "clinxDelivery": session.deliveryResult(value)
     case "diagnostic":
         if let raw = value.data(using: .utf8), var object = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] {
             if let window = NativeProduct.shared.focused?.window {

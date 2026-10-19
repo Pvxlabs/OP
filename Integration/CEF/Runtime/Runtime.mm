@@ -21,6 +21,7 @@ std::map<int, CefRefPtr<Client>> clients;
 bool quitting = false;
 std::string fixtureOrigin;
 std::string worldSource;
+std::string deliverySource;
 std::string Origin(const std::string& text) {
   NSURL* u = [NSURL URLWithString:[NSString stringWithUTF8String:text.c_str()]];
   if (!u || u.user || u.password) return "";
@@ -87,6 +88,10 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
   void OnAddressChange(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, const CefString& url) override {
     if (frame->IsMain()) Event("address", url.ToString());
   }
+  bool OnBeforeBrowse(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request, bool, bool) override {
+    if (!fixtureOrigin.empty() && frame->IsMain()) Event("fixtureBrowse", request->GetURL());
+    return false;
+  }
   void OnLoadingStateChange(CefRefPtr<CefBrowser>, bool loading, bool back, bool forward) override {
     Event("navigation", std::string(loading ? "1" : "0") + (back ? "1" : "0") + (forward ? "1" : "0"));
   }
@@ -107,6 +112,18 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     else if (item->IsCanceled()) Event("downloadCancelled");
   }
   void OnDevToolsMethodResult(CefRefPtr<CefBrowser>, int id, bool success, const void* result, size_t size) override {
+    auto delivery = deliveries_.find(id);
+    if (delivery != deliveries_.end()) {
+      auto value = success ? Dictionary(result, size) : nullptr;
+      auto remote = value ? value->GetDictionary("result") : nullptr;
+      if (remote && remote->GetType("value") == VTYPE_STRING) Event("clinxDelivery", remote->GetString("value"));
+      else {
+        auto failure = CefDictionaryValue::Create(); failure->SetString("request", delivery->second);
+        failure->SetString("status", "uncertain"); failure->SetString("reason", "网页执行未确认");
+        auto v = CefValue::Create(); v->SetDictionary(failure); Event("clinxDelivery", CefWriteJSON(v, JSON_WRITER_DEFAULT));
+      }
+      deliveries_.erase(delivery);
+    }
     if (id == flush_) Event("flushed");
     if (id == diagnostic_ && success) {
       auto value = Dictionary(result, size); auto remote = value ? value->GetDictionary("result") : nullptr;
@@ -116,14 +133,12 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
       auto value = Dictionary(result, size); auto remote = value ? value->GetDictionary("result") : nullptr;
       Event("bridgeIsolation", remote && remote->GetBool("value") ? "true" : "false");
     }
-    if (id == install_) { installReady_ = true; Event(success ? "observerInstalled" : "observerFailed"); }
-    if (id == tree_) treeReady_ = true;
+    if (id == install_) Event(success ? "observerInstalled" : "observerFailed");
     if (id == tree_ && success) {
       auto p = Dictionary(result, size);
       if (p && p->GetDictionary("frameTree") && p->GetDictionary("frameTree")->GetDictionary("frame"))
         mainFrame_ = p->GetDictionary("frameTree")->GetDictionary("frame")->GetString("id");
     }
-    if (installReady_ && treeReady_ && !navigated_) { navigated_ = true; browser_->GetMainFrame()->LoadURL(requestedURL_); }
   }
   void OnDevToolsEvent(CefRefPtr<CefBrowser>, const CefString& method, const void* bytes, size_t size) override {
     const std::string name = method;
@@ -193,7 +208,24 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
         dilCount: document.querySelectorAll('[data-dil-message-id]').length,
         assistantCount: document.querySelectorAll('[data-message-author-role="assistant"]').length,
         unitCount: document.querySelectorAll('[data-content-search-unit-key]').length,
+        messageUnits: [...document.querySelectorAll('[data-content-search-unit-key]')].slice(-8).map(n => ({
+          key:n.getAttribute('data-content-search-unit-key'), role:n.getAttribute('data-message-author-role'),
+          userBodies:n.querySelectorAll('[data-message-author-role="user"]').length,
+          visible:n.getClientRects().length > 0, characters:(n.innerText || '').trim().length
+        })),
         selectionCount: document.querySelectorAll('[data-chatgpt-selection-conversation-id]').length,
+        composers: [...document.querySelectorAll('textarea, [contenteditable]')].slice(-12).map(n => ({
+          tag:n.tagName, id:n.id, editable:n.getAttribute('contenteditable'),
+          visible:n.getClientRects().length > 0, form:Boolean(n.closest('form')),
+          characters:(n.innerText || n.value || '').trim().length
+        })),
+        sendButtons: [...document.querySelectorAll('button[data-testid="send-button"]')].map(n => ({
+          visible:n.getClientRects().length > 0, disabled:n.disabled, form:Boolean(n.closest('form'))
+        })),
+        submitControls: [...document.querySelectorAll('button[type="submit"], button[aria-label*="Send"], button[aria-label*="发送"], button[data-testid*="send"], button[data-testid*="submit"]')].slice(-8).map(n => ({
+          id:n.id, testID:n.getAttribute('data-testid'), label:n.getAttribute('aria-label'), type:n.getAttribute('type'),
+          visible:n.getClientRects().length > 0, disabled:n.disabled, form:Boolean(n.closest('form'))
+        })),
         conversationScopes: [...document.querySelectorAll('[data-chatgpt-selection-conversation-id]')].slice(-8).map(n => ({
           conversation:id(n.getAttribute('data-chatgpt-selection-conversation-id')),
           message:id(n.getAttribute('data-chatgpt-selection-message-id')),
@@ -215,12 +247,26 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined'");
     p->SetBool("returnByValue", true); isolationTest_ = Command("Runtime.evaluate", p);
   }
+  void Deliver(const std::string& payload) {
+    if (!browser_ || payload.size() > 64 * 1024 || deliverySource.empty() || Origin(browser_->GetMainFrame()->GetURL()).empty()) return;
+    auto data = Dictionary(payload.data(), payload.size());
+    if (!data || data->GetString("request").empty()) return;
+    for (const auto& context : contexts_) if (context.second == mainFrame_) {
+      auto value = CefValue::Create(); value->SetDictionary(data);
+      auto p = CefDictionaryValue::Create(); p->SetInt("contextId", context.first);
+      p->SetString("expression", "(" + deliverySource + ")(" + CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString() + ")");
+      p->SetBool("returnByValue", true); p->SetBool("awaitPromise", true);
+      deliveries_[Command("Runtime.evaluate", p)] = data->GetString("request");
+      return;
+    }
+  }
   CefRefPtr<CefBrowser> browser_;
  private:
   int64_t key_; std::string requestedURL_, world_, mainFrame_;
-  bool installReady_ = false, treeReady_ = false, navigated_ = false; int command_ = 0, install_ = 0, tree_ = 0, isolationTest_ = 0, flush_ = 0, diagnostic_ = 0;
+  int command_ = 0, install_ = 0, tree_ = 0, isolationTest_ = 0, flush_ = 0, diagnostic_ = 0;
   bool enabled_ = true;
   std::map<int, std::string> contexts_; std::map<int, int> pending_;
+  std::map<int, std::string> deliveries_;
   CefRefPtr<CefRegistration> registration_;
   IMPLEMENT_REFCOUNTING(Client);
 };
@@ -235,8 +281,10 @@ int32_t op_cef_create(void* parent, const char* url, int64_t key) {
   CEF_REQUIRE_UI_THREAD(); NSView* host = (__bridge NSView*)parent;
   CefWindowInfo info; info.SetAsChild((__bridge void*)host, CefRect(0, 0, host.bounds.size.width, host.bounds.size.height)); info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   CefBrowserSettings settings; CefRefPtr<Client> client = new Client(key, url);
-  // Attach the bridge before navigating a real page. No initial authentication URL is persisted by native logging.
-  auto browser = CefBrowserHost::CreateBrowserSync(info, client, "about:blank", settings, nullptr, nullptr);
+  // Let CEF own its initial navigation. The isolated script's runImmediately
+  // installation also observes an already loading document without a second
+  // competing navigation. Authentication URLs are never logged natively.
+  auto browser = CefBrowserHost::CreateBrowserSync(info, client, url, settings, nullptr, nullptr);
   if (!browser) return 0;
   return browser->GetIdentifier();
 }
@@ -255,6 +303,7 @@ void op_cef_flush(int32_t id) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(i
 void op_cef_close(int32_t id) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->browser_->GetHost()->CloseBrowser(true); }
 void op_cef_enabled(int32_t id, bool enabled) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Enabled(enabled); }
 void op_cef_ack(int32_t id, int32_t context, int32_t request, bool ok) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Ack(context, request, ok); }
+void op_cef_clinx(int32_t id, const char* payload) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Deliver(payload); }
 void op_cef_test(int32_t id, int32_t action) {
   CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i == clients.end() || fixtureOrigin.empty()) return;
   auto b = i->second->browser_;
@@ -291,6 +340,9 @@ int main(int argc, char* argv[]) {
     // This target never exposes a remote debugging listener, including in Release.
     NSString* source = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"CEFObserver" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
     if (!source) return 2;
+    NSString* delivery = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"ClinxDelivery" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
+    if (!delivery) return 2;
+    deliverySource = delivery.UTF8String;
     auto command = CefCommandLine::CreateCommandLine(); command->InitFromArgv(argc, argv);
     if (command->HasSwitch("self-test-origin")) {
       std::string value = command->GetSwitchValue("self-test-origin");

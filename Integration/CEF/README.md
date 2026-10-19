@@ -49,7 +49,7 @@ File dialogs and clipboard use normal Chromium/AppKit handling; downloads explic
 
 ## Native header
 
-Only a native refresh icon at top right; no other custom titlebar buttons, glass title item, shadow or web restyling. Startup is website-first and never automatically displays local copies; SQLite/recent-list refresh runs after navigation is requested. Plain text, #F9F9F9 background and requested 40 pt measured windowed titlebar; AppKit still owns the red/yellow/green controls. Commands remain in File/Page menus and the menu bar entry. The current machine is macOS 26.6.2, built with Xcode 27 SDK. This does not verify macOS 27 visual appearance.
+Native 收取 and refresh controls sit at top right. 收取 opens the CLINX inbox and checks the current ordinary conversation without manual task IDs; see [the automatic identification contract](../../docs/CLINX-AUTO-BINDING-SPEC.md). Startup is website-first and never automatically displays local copies; SQLite/recent-list refresh runs after navigation is requested. Plain text and requested 40 pt measured windowed titlebar; AppKit still owns the red/yellow/green controls. 页面 > 外观 selects 跟随系统 (default), 浅色 or 夜晚 and persists the choice for all native windows and recovery UI. Light uses #F9F9F9 / #313131; night uses #1C1C1C / #EEEEEE. Refresh remains readable in inactive windows. Appearance switching does not reload or restyle the official website, which retains its own theme preference. Commands remain in File/Page menus and the menu bar entry. The current machine is macOS 26.6.2, built with Xcode 27 SDK. This does not verify macOS 27 visual appearance.
 
 ## Signing and upgrades
 

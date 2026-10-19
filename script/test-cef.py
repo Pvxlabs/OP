@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Run only isolated integration synthetic tests; sample its entire process family."""
-import datetime, json, pathlib, subprocess, time, sys, os
+import datetime, json, pathlib, subprocess, time, sys, os, plistlib
 root = pathlib.Path(__file__).resolve().parents[1]
 app = pathlib.Path(os.environ.get('OP_CEF_TEST_APP', str(root/'build/CEFIntegration/Release/OPCEFIntegration.app'))).resolve()
+identity = plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleIdentifier']
+installed = pathlib.Path('/Applications/OP.app/Contents/Info.plist')
+if installed.exists() and identity == plistlib.loads(installed.read_bytes()).get('CFBundleIdentifier'):
+    raise RuntimeError('Synthetic tests require a separately identified app; set OP_CEF_TEST_APP to an isolated review build.')
 evidence = root/'build/CEFIntegration/evidence'/('run-'+datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
 evidence.mkdir(parents=True)
 server = subprocess.Popen(['python3',str(root/'Integration/CEF/fixture.py'),str(evidence)])
@@ -13,10 +17,14 @@ try:
     origin = 'http://127.0.0.1:'+(evidence/'port').read_text()
     samples=[]
     for phase in ['core','restart']:
-        args = ['open','-n','-W',str(app),'--args','--self-test','--self-test-origin='+origin,'--evidence='+str(evidence)]
+        # Fixtures use no account data. Keep Chromium's synthetic cookie key away
+        # from the system Keychain and production profiles during ad-hoc signing.
+        args = ['open','-n','-W',str(app),'--args','--self-test','--use-mock-keychain','--self-test-origin='+origin,'--evidence='+str(evidence)]
         if phase == 'restart': args += ['--restart-check']
         began=time.monotonic(); process=subprocess.Popen(args)
-        while process.poll() is None and time.monotonic()-began < 120:
+        # The expanded real-CEF suite includes six separate identification chats
+        # and their bounded shutdown waits. Keep the fixture alive for that work.
+        while process.poll() is None and time.monotonic()-began < 180:
             rows=[]
             for line in subprocess.check_output(['ps','-axo','pid=,ppid=,%cpu=,rss=,comm='], text=True).splitlines():
                 fields=line.strip().split(None,4)

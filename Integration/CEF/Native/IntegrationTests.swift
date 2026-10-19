@@ -50,6 +50,9 @@ import AppKit
                 try await wait("silent startup official content") { restored.active?.readableConversation == self.a }
                 try check(!restored.showingLocal, "startup never flashes a local transcript during official synchronization")
             } else {
+                try await ClinxObserver(endpoint: CEFIdentity.fixtureOrigin!, fixture: true).health()
+                try check(true, "loopback fixture is reachable before CEF navigation")
+                let clinxReceipt = try await runClinxModels()
                 try mode("normal")
                 product.openWindow(url: CEFIdentity.url(summary(a)))
                 let scene = product.windows.last!, workspace = scene.workspace
@@ -67,10 +70,26 @@ import AppKit
                 try await Task.sleep(for: .seconds(2))
                 try check((await product.library.messages(a)).count == 1, "subframe snapshot rejected despite same origin and conversation")
                 let hash = initial[0].fingerprint
+                let originalAppearance = product.appearance
+                product.setAppearance(.light)
                 metrics["titlebarPoints"] = scene.window!.frame.height - scene.window!.contentLayoutRect.height
                 try check(abs(metrics["titlebarPoints"]! - 40) < 0.1, "native titlebar measured height is 40 pt")
                 let color = scene.window!.backgroundColor.usingColorSpace(.sRGB)!
                 try check([color.redComponent,color.greenComponent,color.blueComponent].allSatisfy { abs($0 - 249.0/255) < 0.0001 }, "native titlebar background is #F9F9F9")
+                let navigationBeforeAppearance = first.navigationCount
+                product.setAppearance(.dark)
+                try check(scene.window!.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
+                          "night mode applies native dark appearance")
+                let darkBackground = scene.window!.backgroundColor.usingColorSpace(.sRGB)!
+                let refreshColor = scene.refreshButton.contentTintColor!.usingColorSpace(.sRGB)!
+                try check(abs(darkBackground.redComponent - 28.0/255) < 0.0001 && refreshColor.redComponent > 0.9,
+                          "night titlebar is dark with a bright refresh glyph")
+                try check(UserDefaults.standard.string(forKey: "nativeAppearance") == "dark", "appearance selection is persisted")
+                product.setAppearance(.system)
+                try check(NSApp.appearance == nil, "follow-system mode removes the native appearance override")
+                try check(first.navigationCount == navigationBeforeAppearance && workspace.active === first,
+                          "appearance changes preserve the mounted conversation without navigation")
+                product.setAppearance(originalAppearance)
                 op_cef_test(first.browser, 8)
                 try await Task.sleep(for: .seconds(1))
                 try check((await product.library.messages(a)).first?.fingerprint == hash, "missing DOM conversation identity is rejected without overwriting prior copy")
@@ -116,6 +135,15 @@ import AppKit
                 product.openWindow(url: CEFIdentity.url(summary(b)))
                 try await wait("new window") { self.product.windows.last?.workspace.active?.readableConversation == self.b }
                 try check(product.windows.last!.workspace.active!.browser != workspace.active!.browser, "simultaneous windows own distinct CEF browsers and views")
+                product.setAppearance(.dark)
+                try check(product.windows.allSatisfy { $0.window!.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua },
+                          "night appearance reaches every open native window")
+                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 174.0/255) < 0.0001 && scene.refreshButton.contentTintColor!.usingColorSpace(.sRGB)!.redComponent > 0.9,
+                          "inactive night window keeps its title and refresh readable")
+                product.setAppearance(.light)
+                try check(!scene.window!.isKeyWindow && abs(scene.titleLabel.textColor!.usingColorSpace(.sRGB)!.redComponent - 112.0/255) < 0.0001 && scene.refreshButton.contentTintColor!.usingColorSpace(.sRGB)!.redComponent < 0.2,
+                          "inactive light window keeps its title and refresh readable")
+                product.setAppearance(originalAppearance)
                 let revisionBeforePause = product.library.revision
                 product.library.enabled = false; product.setCapture(false)
                 op_cef_test(workspace.active!.browser, 1)
@@ -143,6 +171,8 @@ import AppKit
                 try await wait("stream interruption") { (await self.product.library.messages(streamingID)).first?.state == .interrupted }
                 try check((await product.library.messages(streamingID)).first?.state == .interrupted, "closing an unfinished stream marks it interrupted")
                 try mode("normal")
+                try await runClinx(receipt: clinxReceipt)
+                try await runClinxIdentification()
             }
             let elapsed = began.duration(to: .now).components
             metrics["suiteSeconds"] = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18

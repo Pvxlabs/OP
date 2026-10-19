@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 import Observation
 
+struct ClinxDeliveryReport: Decodable {
+    var request: String = ""
+    let status: String
+    let reason: String
+    var observation: ClinxObservation? = nil
+}
+
 @MainActor @Observable
 final class CEFSession: Identifiable {
     let id: Int64
@@ -25,6 +32,30 @@ final class CEFSession: Identifiable {
     var attachmentCount = 0
     var retired = false
     var flushCount = 0
+    private var deliveries: [String: CheckedContinuation<ClinxDeliveryReport, Never>] = [:]
+    func deliverClinx(conversation: String, message: String, marker: String, verify: Bool,
+                      inspect: Bool = false, identification: String = "") async -> ClinxDeliveryReport {
+        guard !Task.isCancelled, deliveries.isEmpty, browser > 0, !retired else { return .init(status: "waiting", reason: "等待其他回执处理。") }
+        let request = UUID().uuidString
+        let object: [String: Any] = ["request": request, "conversation": conversation, "message": message, "marker": marker, "verify": verify,
+                                     "inspect": inspect, "identification": identification,
+                                     "deadline": Date().addingTimeInterval(10).timeIntervalSince1970 * 1000]
+        guard let data = try? JSONSerialization.data(withJSONObject: object), let json = String(data: data, encoding: .utf8), data.count <= 64 * 1024 else {
+            return .init(status: "waiting", reason: "回执内容超过限制。")
+        }
+        return await withCheckedContinuation { continuation in
+            deliveries[request] = continuation
+            json.withCString { op_cef_clinx(browser, $0) }
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(20))
+                self?.deliveries.removeValue(forKey: request)?.resume(returning: .init(status: "uncertain", reason: "网页核验超时。"))
+            }
+        }
+    }
+    func deliveryResult(_ json: String) {
+        guard let report = try? JSONDecoder().decode(ClinxDeliveryReport.self, from: Data(json.utf8)) else { return }
+        deliveries.removeValue(forKey: report.request)?.resume(returning: report)
+    }
     private var retiredInterrupt: Task<Void, Never>?
     var conversation: String? { CEFIdentity.conversation(url) }
     init(id: Int64, url: URL) { self.id = id; initialURL = url; self.url = url }

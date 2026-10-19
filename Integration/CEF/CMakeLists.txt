@@ -27,7 +27,7 @@ set(NATIVE_LIB "${CMAKE_CURRENT_BINARY_DIR}/libOPNative.dylib")
 add_custom_command(OUTPUT "${NATIVE_LIB}"
  COMMAND xcrun swiftc -O -swift-version 6 -target arm64-apple-macos14.0 -emit-library -module-name OPNative
  -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/Bridge.h"
- -framework AppKit -framework SwiftUI -lsqlite3 -Xlinker -undefined -Xlinker dynamic_lookup
+ -framework AppKit -framework SwiftUI -framework Security -lsqlite3 -Xlinker -undefined -Xlinker dynamic_lookup
  -Xlinker -install_name -Xlinker @executable_path/../Frameworks/libOPNative.dylib
  ${NATIVE_SOURCES} ${SHARED_SOURCES} -o "${NATIVE_LIB}"
  DEPENDS ${NATIVE_SOURCES} ${SHARED_SOURCES} Runtime/Bridge.h VERBATIM)
@@ -66,6 +66,7 @@ add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
  COMMAND ${CMAKE_COMMAND} -E make_directory "${CEF_APP}/Contents/Resources"
  COMMAND ${CMAKE_COMMAND} -E copy "${NATIVE_LIB}" "${CEF_APP}/Contents/Frameworks/libOPNative.dylib"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/compose-observer.py" "${OP_ROOT}/ChatGPTNative/Services/MessageObserver.js" "${CEF_APP}/Contents/Resources/CEFObserver.js"
+ COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ClinxDelivery.js" "${CEF_APP}/Contents/Resources/ClinxDelivery.js"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/package-icon.py" "${OP_ROOT}/ChatGPTNative/Assets.xcassets/AppIcon.appiconset" "${CEF_APP}/Contents/Resources/OP.icns"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Resources/LICENSE-CEF.txt" "${CEF_APP}/Contents/Resources/LICENSE-CEF.txt"
  VERBATIM)

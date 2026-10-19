@@ -10,6 +10,18 @@ Native AppKit owns NSApplication and CEF's main loop; SwiftUI owns per-window st
 
 Reuse SnapshotModels, SnapshotStore, SnapshotLibrary and recovery text unchanged. Isolated integration uses its own bundle identifier, profile, defaults and SQLite directory. Production SQLite format remains compatible; no existing database is opened for writing or copied automatically. WK login cannot be transferred; normal CEF login is required.
 
+2026-10-20 appearance amendment: the requested night mode replaces the fixed-light
+native chrome requirement above. 页面 > 外观 offers persisted system (default), light
+and dark choices for all native windows and recovery panels. Light keeps #F9F9F9
+with #313131 controls; dark uses #1C1C1C with #EEEEEE controls. The refresh glyph
+must remain readable while the window is active or inactive. Preserve the 40 pt
+header, window controls and conversation; changing appearance must not navigate
+or restyle the official website, which retains its own theme setting.
+
+2026-10-20 CLINX amendment: the requested native 收取 action sits beside refresh.
+Ordinary-chat identification, exact Observer verification and durable result
+delivery follow [the automatic identification contract](CLINX-AUTO-BINDING-SPEC.md).
+
 ## Milestones and gates
 
 1. Establish build target/runtime: pinned CEF 154.0.34+g14c5a08+chromium-154.0.8037.98; AppKit+SwiftUI host; same-identity nested signing; bounded shutdown before CefShutdown. Verify Release/signature/startup before adding real-login acceptance.

@@ -1,5 +1,112 @@
 # CEF integration candidate acceptance — 2026-10-19
 
+## Repository integration and local artifact cleanup — 2026-10-20
+
+This delivery integrates the night appearance and CLINX original-chat changes on
+master. The final 81 core + 4 restart checks and installed release hashes remain
+the runtime validation evidence; the delivery step changes documentation only.
+
+Local recovery and raw evidence use this archive:
+`/Users/tinzleung/Developer/Archives/OP/2026-10-20/integration-032610`.
+`recovery-apps.tar.gz` retains eight historical signed apps, with identical file
+payloads stored using portable tar hard links. `recovery-manifest.json` records
+SHA-256, modes and symlink targets; restore verification checks all eight apps.
+The archive README provides extraction commands. No account, profile, Keychain or
+CLINX service state is part of cleanup.
+
+After verifying the pushed source commit/tree, cleanup removes superseded test
+builds, temporary candidate apps, the duplicate compressed SDK download and Xcode
+intermediates. The installed /Applications/OP.app, final CEF build, extracted CEF
+SDK and local signing helper remain. Raw logs/screenshots/test runs are archived;
+compatibility symlinks retain their documented build evidence paths. The local
+archive's cleanup-report.json records actual removals and final repository state.
+
+## Automatic CLINX identification and top-bar collection — 2026-10-20 — PASS
+
+Installed /Applications/OP.app now places 收取 beside refresh in the native
+40-point night-aware header. Ordinary original ChatGPT conversations remain the
+source and destination. No conversation pairing or per-task ID entry is required;
+manual binding fields are collapsed under Advanced.
+
+`build/CEFIntegration/evidence/run-20261020-031706`: **81 core + 4 restart PASS**.
+Real CEF covers AI source identification -> Observer exact execution verification
+-> automatic binding -> result receipt -> assistant response without a manual
+bind call. A real-site long-message collapse issue was corrected by excluding
+Show more/less controls from full immutable-payload readback; the fixture now
+exercises collapsed identity-query bubbles. Multiple new source turns in one
+poll are each identified once; same-execution selections retain one binding.
+The expanded test harness allows 180 seconds so it keeps its local fixture alive
+for the additional source chat and bounded shutdown waits.
+
+Real ordinary-chat evidence is separate and positive: the original work chat
+identified its existing ORION P1.6 execution from actual tool context; Observer
+verified the task/execution; explicit top-bar 收取 imported its historical terminal
+result without ID entry; the result appeared in that same original chat and
+ChatGPT responded. Automatic mode had correctly skipped replay before the
+explicit historical collection. A capability-only test turn returned an empty
+identity list and created no binding. The old MCP outage cleared on a fresh
+read-only capability query. No new execution or service change was performed.
+
+AI identifies the source; Observer verifies task/execution identities and does
+not independently certify ChatGPT provenance. Source chats must be open/readable
+for identification and delivery. This result does not resolve the existing
+fresh-first-turn DOM identity, distribution or benchmark gaps, and it does not
+certify the underlying ORION task's business qualification.
+
+Strict deep local signing and three installed-file hashes passed; backup and
+screenshots are under build/clinx-auto/. See [the automatic identification
+contract](CLINX-AUTO-BINDING-SPEC.md) for exact gates and evidence. Earlier acceptance
+entries below describe their respective historical builds.
+
+## CLINX original-chat delivery update — 2026-10-20
+
+The installed CEF build adds 页面 > CLINX 任务收件箱. An explicit task/execution
+binding receives only the matching Observer result summary and submits a visible
+follow-up in the bound ordinary ChatGPT conversation. Native Monitor credential
+access and a real 50-task list read passed. A separate real ordinary test chat
+received one synthetic receipt automatically and replied OP_CLINX_DELIVERY_ACK
+in that same conversation; adapter readback returned responding.
+
+Latest regression: `build/CEFIntegration/evidence/run-20261020-022257`, **66 core +
+4 restart checks PASS**. The complete Observer HTTP -> durable inbox -> original
+CEF conversation -> receipt -> response chain is synthetic fixture proof; live
+Observer access and the real website adapter were checked separately. Current
+website composer, submit button and user-message structure were diagnosed and
+reflected in the fixture. No real task result was sent to an unrelated test chat.
+
+Validated executable, native library and delivery script hashes match the installed
+`/Applications/OP.app`; strict deep signing passed. Old app bundles are recoverable
+under `build/clinx-delivery/`. The original ordinary work conversation and night
+appearance were restored. See [the bounded implementation contract](CLINX-REPLY-SPEC.md)
+for gates, uncertain-send handling and evidence paths. This update does not resolve
+the previously recorded fresh-first-turn protection or distribution/benchmark gaps.
+
+## Night mode update — 2026-10-20 — PASS
+
+The fixed-light header is superseded by 页面 > 外观: 跟随系统 (default), 浅色,
+夜晚. The preference persists and controls all native windows and recovery UI.
+Light uses #F9F9F9 / #313131; night uses #1C1C1C / #EEEEEE. The refresh button is
+borderless, avoiding accessory-bar vibrancy over a mismatched background; inactive
+titles retain readable contrast. Header height remains 40 pt. Website styling is
+not injected; pages following the system may respond to the native appearance.
+
+`build/CEFIntegration/evidence/run-20261020-013153`: **38 core + 4 restart checks
+PASS**, including native dark/light/system transitions, persisted selection,
+multiwindow appearance, inactive title/refresh colors and preserved conversation
+without navigation. Actual UI menu switching and a quit/relaunch confirmed night
+mode persistence. Release compilation and strict local ad-hoc signing passed,
+using the same signing approach as the existing installation; no developer signing
+identity is currently available on this Mac.
+
+Updated `/Applications/OP.app`, retained its bundle/data identity, selected 夜晚,
+and verified the installed executable/native-library hashes match the staged
+candidate. Actual installed-window AX/screenshot checks confirm the restored
+conversation and visible refresh control; clicking refresh retained the restored
+page. Evidence: `build/night-delivery/OP-night-installed.png` and `bundles.json`.
+Old bundles are retained under `build/night-delivery/`. Earlier delivery and
+acceptance statements below are historical. This targeted update does not resolve
+the previously recorded first-turn identity or other product-acceptance gaps.
+
 ## Delivery state
 
 Subsequent user-authorized installation: the user explicitly requested direct replacement. The CEF Release was packaged as **OP** and installed at `/Applications/OP.app`, retaining `local.personal.OP.CEFIntegration` so its existing CEF login/profile, defaults and SQLite remain in place. The original WK app and consistent SQLite backups are in `~/Library/Application Support/OP/Backups/InstallCEF-20261019-122333`. There was no Cookie migration, Git commit or push. The older isolation-only statements below describe the earlier gate and are superseded only for installation, not for outstanding functional/performance acceptance.
