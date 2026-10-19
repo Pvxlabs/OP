@@ -1,6 +1,38 @@
 # CEF integration candidate acceptance — 2026-10-19
 
 
+## Source publication and iMac update — 2026-10-20
+
+Source delivery commit `6f4845ecc6f678b16a8707fdcfaea64a84a40143` was pushed
+to public `origin/master`; remote SHA readback matched. Staged content scan
+found no credential patterns, and `git diff --cached --check` passed. PDF and
+OpenType header resources are marked binary without changing their bytes.
+The unchanged application source retains the final **55 core + 4 restart PASS**
+run and Air owner acceptance recorded below.
+
+iMac updated from 0.3.0 to the same signed 0.3.1 artifact accepted on Air.
+Transfer used only the private Tailnet, a temporary fixed-file server restricted
+to the iMac peer, and a pre-verified archive SHA-256; the endpoint was stopped
+after delivery. Existing remote device authorization was used; no SSH keys,
+network ACLs, public endpoints or user credentials were added.
+
+Staging, strict deep signature verification, backed-up replacement, relaunch and
+post-launch file verification: **PASS**. All **284 files** match Air, all **46
+pre-existing reply fingerprints** and both legacy inbox files remain. Existing
+profile, bundle/data identity and Keychain are retained. Backup on iMac:
+`~/Library/Application Support/OP/Backups/FigmaHeader-20261020-054647/OP.app`.
+Spotlight reports the correct CEF identifier and the installed main process is
+running from `/Applications/OP.app`. Local receipt:
+`build/Publish-iMac-20261020/imac-installation.json`; iMac receipt:
+`~/Library/Application Support/OP/Updates/Figma-20261020/installation.json`.
+No new iMac real-site interaction or owner UI acceptance was claimed.
+
+Air post-publication verification also retained **284 matching files** and all
+**57 prior reply fingerprints**. The separate current computer-use service cache
+limitation is described below; system registration repair and owner acceptance
+must not be confused with a successful automation-service restart.
+
+
 ## Air owner acceptance and OP registration — 2026-10-20
 
 The owner explicitly confirmed actual Air use of the installed Figma-matched
