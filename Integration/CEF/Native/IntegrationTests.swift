@@ -9,6 +9,7 @@ import AppKit
     let d = "55555555-5555-4555-8555-555555555555"
     var checks: [String] = []
     var metrics: [String: Double] = [:]
+    var transportEvents: [(browser: Int32, value: [String: Any])] = []
     let root: URL
     init(product: NativeProduct) {
         self.product = product
@@ -16,6 +17,9 @@ import AppKit
         root = URL(fileURLWithPath: String(arg.dropFirst("--evidence=".count)))
     }
     func event(_ name: String, browser: Int32, value: String) {
+        if name == "transport", let metadata = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any] {
+            transportEvents.append((browser, metadata))
+        }
         guard !["address", "title"].contains(name) else { return }
         let entry: [String: Any] = ["event": name, "browser": browser, "value": value, "uptime": ProcessInfo.processInfo.systemUptime]
         guard let data = try? JSONSerialization.data(withJSONObject: entry), let handle = try? FileHandle(forWritingTo: root.appendingPathComponent("events.ndjson")) else {
@@ -53,7 +57,11 @@ import AppKit
         let began = ContinuousClock.now
         let restart = CommandLine.arguments.contains("--restart-check")
         do {
-            if restart {
+            if CommandLine.arguments.contains("--consultation-check") {
+                try await runConsultations()
+            } else if CommandLine.arguments.contains("--transport-check") {
+                try await runTransportDiagnostics()
+            } else if restart {
                 let saved = await product.library.messages(a)
                 try check(saved.count == 1 && saved[0].body.hasPrefix("Synthetic protected response"), "SQLite snapshot persists across process restart")
                 try check(saved[0].state != .streaming, "restart never promotes unfinished stream")
@@ -251,6 +259,7 @@ import AppKit
                 try mode("normal")
                 try await runExecutionQuery()
                 try await runReplyNotifications()
+                try await runTransportDiagnostics()
             }
             let elapsed = began.duration(to: .now).components
             metrics["suiteSeconds"] = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18

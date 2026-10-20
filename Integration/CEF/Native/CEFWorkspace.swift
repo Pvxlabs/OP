@@ -31,13 +31,17 @@ final class CEFSession: Identifiable {
     var documentID: String?
     var sequence = 0
     var lastHTTPStatus: Int?
+    var consultationHTTPFailure: Int?
+    var consultationHTTPChallenge = false
     var navigationCount = 0
     var attachmentCount = 0
     var retired = false
     var flushCount = 0
     private var query: (id: String, continuation: CheckedContinuation<ExecutionQueryReport, Never>)?
+    var consultationPending: (id: String, continuation: CheckedContinuation<ConsultationPageReport, Never>)?
+    var hasPendingQuery: Bool { query != nil }
     func queryExecution() async -> ExecutionQueryReport {
-        guard query == nil else { return .init(status: "waiting", reason: "正在发送查询，请稍候。") }
+        guard query == nil, consultationPending == nil else { return .init(status: "waiting", reason: "正在发送查询，请稍候。") }
         guard !Task.isCancelled, browser > 0, !retired, !loading, let conversation else {
             return .init(status: "waiting", reason: "请先打开并加载要查询的 ChatGPT 对话。")
         }
@@ -59,6 +63,10 @@ final class CEFSession: Identifiable {
         }
     }
     func queryResult(_ json: String) {
+        if let pending = consultationPending,
+           let report = try? JSONDecoder().decode(ConsultationPageReport.self, from: Data(json.utf8)), report.request == pending.id {
+            consultationPending = nil; pending.continuation.resume(returning: report); return
+        }
         guard let report = try? JSONDecoder().decode(ExecutionQueryReport.self, from: Data(json.utf8)),
               query?.id == report.request else { return }
         finishQuery(report)

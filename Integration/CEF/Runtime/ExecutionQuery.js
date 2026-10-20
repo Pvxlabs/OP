@@ -26,6 +26,7 @@
   // A previous identical query does not suppress a new explicit click.
   const previous = matches();
   if (Date.now() > config.deadline || !identity() || busy() || modal() || attachments()) return reply('waiting', '页面状态已改变，请重新点击收取。');
+  if (config.preflight === true) return reply('ready');
   editor.focus();
   if (document.activeElement !== editor) return reply('waiting', '输入框无法获得焦点。');
   const selection = getSelection(), range = document.createRange();

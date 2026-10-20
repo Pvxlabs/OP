@@ -1,11 +1,23 @@
 """Synthetic loopback fixture only. Never records headers or website traffic."""
-import http.server, pathlib, json, sys
+import http.server, pathlib, json, sys, time
 root = pathlib.Path(sys.argv[1]); root.mkdir(parents=True, exist_ok=True)
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_): pass
     def do_GET(self):
         with (root/'fixture-requests.ndjson').open('a') as log:
             log.write(json.dumps({'path':self.path})+'\n')
+        if self.path.startswith('/transport/'):
+            case = self.path.rsplit('/', 1)[-1]
+            body = b'data: synthetic partial payload\n\n'
+            self.send_response(429 if case == 'http-error' else 200)
+            self.send_header('Content-Type', 'text/plain' if case == 'http-error' else 'text/event-stream')
+            self.send_header('Content-Length', str(len(body) + (100 if case in ('truncated', 'cancel') else 0)))
+            self.send_header('X-Fixture-Secret', 'must-not-be-logged')
+            self.end_headers()
+            self.wfile.write(body); self.wfile.flush()
+            if case == 'cancel': time.sleep(1)
+            self.close_connection = True
+            return
         conversation = self.path.split('?',1)[0].split('/')[-1]
         try: mode = json.loads((root/'mode.json').read_text()).get(conversation, 'normal')
         except (FileNotFoundError, ValueError): mode = 'normal'
@@ -36,6 +48,17 @@ const renderReceipt=text=>{{
  const turn=document.createElement('article');turn.dataset.talvtTurnState='complete';
  const assistant=document.createElement('div');assistant.dataset.contentSearchUnitKey='fixture:receipt:assistant';
  assistant.textContent='Synthetic query acknowledged';
+ const consultation=text.match(/OP_CONSULT_REQUEST:([0-9a-f-]{{36}})/);
+ if(consultation) {{
+   user.dataset.contentSearchUnitKey='fixture:'+consultation[1]+':user';
+   turn.dataset.talvtTurnState='in_progress';assistant.textContent='';
+   const id=crypto.randomUUID(),scope=document.createElement('div'),body=document.createElement('div');
+   assistant.dataset.chatgptSearchMessageIds=id;
+   scope.dataset.chatgptSelectionConversationId='{conversation}';scope.dataset.chatgptSelectionMessageId=id;
+   body.dataset.dilMessageId=id;body.textContent='Generating synthetic answer';
+   scope.append(body);assistant.append(scope);
+   setTimeout(()=>{{body.textContent='OP_CONSULT_REQUEST:'+consultation[1]+'\\nOP_SYNTHETIC_SUM=42';turn.dataset.talvtTurnState='complete';}},700);
+ }}
  turn.append(assistant);document.querySelector('main').append(turn);
 }};
 for(const text of JSON.parse(localStorage.getItem(historyKey)||'[]')) renderReceipt(text);
@@ -71,6 +94,13 @@ send.addEventListener('click',()=>{{
  if(action===25) {{editor.addEventListener('input',()=>{{history.replaceState(null,'','/c/99999999-9999-4999-8999-999999999999');}},{{once:true}});}}
  if(action===28) document.querySelector('[aria-label="Stop generating"]').click();
  if(action===26) {{editor.addEventListener('input',()=>{{document.getElementById('test-modal')?.remove();window.fixture(14);}},{{once:true}});}}
+ if(action>=29 && action<=32) {{
+   const kind=['normal','truncated','http-error','cancel'][action-29];
+   const controller=new AbortController();
+   fetch('/transport/'+kind,{{signal:controller.signal,headers:{{'X-Fixture-Secret':'must-not-be-logged'}}}})
+     .then(response=>response.text()).catch(()=>{{}});
+   if(kind==='cancel') setTimeout(()=>controller.abort(),100);
+ }}
 }};</script>'''
         data = html.encode(); self.send_response(status); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
 server = http.server.ThreadingHTTPServer(('127.0.0.1',0), Handler)

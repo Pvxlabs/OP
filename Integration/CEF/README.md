@@ -39,6 +39,18 @@ The build compiles a Swift 6 native library (SwiftUI, shared SQLite store/recove
 
 CEF's public in-process DevTools API installs a named isolated world and snapshot-only binding. No remote debugging server is configured. Browser-side gates require the expected world, current main frame, exact official origin, bounded payload, one outstanding batch, session/URL identity and validated message IDs. The shared store enforces sequence/deduplication/error rules. JS receives acknowledgement after SQLite ingestion. Native calls and arbitrary file/network APIs are not exposed to the remote main world. Native diagnostics never subscribes to Network or console domains.
 
+Passive CEF resource lifecycle callbacks also emit local `ReplyTransport` unified
+logs for same-origin main-frame fetch/XHR streams and failed requests. These
+record only a CEF-local request number, native session/browser numbers, response
+or end phase, HTTP/CEF status, Chromium error number, byte count and elapsed
+milliseconds. They never record URL paths, headers, cookies, request/response
+bodies or website IDs, and do not filter, change, cancel or retry requests.
+Fixed lifecycle markers distinguish page-end, load failure, renderer termination
+and browser closure. Inspect with `log show --last 10m --style compact --predicate
+'subsystem == "local.personal.OP.CEFIntegration" AND category == "ReplyTransport"'`.
+A successful HTTP 200 stream/clean EOF still does not prove a complete answer.
+Service-worker or subframe requests are outside this narrow diagnostic scope.
+
 Do not weaken the DOM conversation identity gate to compensate for empty identity attributes. Live first-turn identity gaps are explicitly a release blocker; see the acceptance report. `pageEnded` never means server-final/completely persisted.
 
 ## Bounded browser ownership
@@ -51,7 +63,14 @@ File dialogs and clipboard use normal Chromium/AppKit handling; downloads explic
 
 Native icon-only query and refresh controls sit at top right. Header styling follows the owner-edited Figma “02 你的调整区” in file `xWHKogXYl3WijpAvXxn7MP`: bundled 13 pt Inter Bold and exact exported vector glyphs, 40 pt titlebar, night #1C1C1C / #A1A1AA, hover #2E2E2E with 4 pt corners and 32 x 30 pt bounds. Night inactive uses #6E6E6E title and hides both right icons as drawn. Light active remains #F9F9F9 / #313131 and uses the same glyphs and geometry as night mode. Native traffic-light and title/button positions follow the exported coordinates; full-screen controls remain system-managed. See [the exact contract](../../docs/CEF-INTEGRATION-SPEC.md).
 
-The query button sends a fixed execution-status message in the current ordinary ChatGPT conversation; ChatGPT looks up the task through CLINX using its existing context. OP has no task inbox, ID identification, pairing/binding, Observer configuration or background polling. Drafts, attachments, active generation and visible modals block sending with a native explanation; uncertain sends are never auto-retried. Startup and all normal navigation always display the official browser; local copies open only on explicit user request. 页面 > 外观 selects 跟随系统 (default), 浅色 or 夜晚 and persists the choice for all native windows and recovery UI without reloading or restyling the official website. Commands remain in File/Page menus and the menu bar entry. macOS 27 visual appearance remains unverified.
+The query button sends a fixed execution-status message in the current ordinary ChatGPT conversation; ChatGPT looks up the task through CLINX using its existing context. Drafts, attachments, active generation and visible modals block sending with a native explanation; uncertain sends are never auto-retried. Startup and all normal navigation always display the official browser; local copies open only on explicit user request. 页面 > 外观 selects 跟随系统 (default), 浅色 or 夜晚 and persists the choice for all native windows and recovery UI without reloading or restyling the official website. Commands remain in File/Page menus and the menu bar entry. macOS 27 visual appearance remains unverified.
+
+The opt-in [Codex ↔ ChatGPT consultation bridge](../../docs/CODEX-CHATGPT-BRIDGE.md)
+adds native MCP connection, explicit current-conversation binding and bridge
+status commands in 页面. It uses the existing CLINX stdio task database and
+polls only that binding while OP is running. The old automatic task-identification
+and Observer inbox remain superseded. No consultation is enabled without an
+explicit connection and binding; installed OP is not replaced by a review build.
 
 ## Background reply reminders
 

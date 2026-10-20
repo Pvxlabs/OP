@@ -17,10 +17,21 @@ try:
         time.sleep(.05)
     origin = 'http://127.0.0.1:'+(evidence/'port').read_text()
     samples=[]
-    for phase in ['core','restart']:
+    transport_only = os.environ.get('OP_CEF_TRANSPORT_ONLY') == '1'
+    consultation_only = os.environ.get('OP_CEF_CONSULTATION_ONLY') == '1'
+    if consultation_only:
+        clinx = pathlib.Path(os.environ.get('OP_CLINX_ROOT', str(root.parent/'CLINX'))).resolve()
+        sys.path.insert(0,str(clinx))
+        from task_registry import TaskRegistry
+        registry=TaskRegistry(evidence/'consultation-tasks.sqlite3')
+        task=registry.create_task(host='local',workspace_alias='test',project_alias='op-test',project_name='OP bridge fixture',cwd=str(evidence),repository_origin=None,branch=None,title='Synthetic OP consultation')
+        (evidence/'consultation-config.json').write_text(json.dumps({'command':[sys.executable,str(clinx/'mcp_server.py'),'--stdio','--consultations-only','--task-db',str(registry.path)],'task_ref':task.task_id}))
+    for phase in (['core'] if transport_only or consultation_only else ['core','restart']):
         # Fixtures use no account data. Keep Chromium's synthetic cookie key away
         # from the system Keychain and production profiles during ad-hoc signing.
         args = ['open','-n','-W',str(app),'--args','--self-test','--use-mock-keychain','--disable-notifications','--self-test-origin='+origin,'--evidence='+str(evidence)]
+        if transport_only: args += ['--transport-check']
+        if consultation_only: args += ['--consultation-check']
         if os.environ.get('OP_CEF_HEADER_VISUALS') == '1': args += ['--header-visuals']
         if phase == 'restart': args += ['--restart-check']
         began=time.monotonic(); process=subprocess.Popen(args)
@@ -38,7 +49,8 @@ try:
             time.sleep(.25)
         if process.poll() is None: raise RuntimeError('Test timeout; stopping only the isolated review app')
         report=json.loads((evidence/(phase+'.json')).read_text()); print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)
-        if report['status'] != 'PASS': break
+        if report['status'] != 'PASS':
+            raise RuntimeError(f"CEF {phase} failed: {report.get('error', 'unknown failure')}; evidence: {evidence}")
     (evidence/'process-samples.json').write_text(json.dumps(samples,indent=2))
     print('Evidence:',evidence)
 finally:

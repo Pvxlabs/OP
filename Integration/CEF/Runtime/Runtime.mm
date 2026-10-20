@@ -1,6 +1,7 @@
 // AppKit lifecycle follows the CEF BSD-licensed cefsimple macOS sample.
 // See Resources/LICENSE-CEF.txt. Product integration code is OP-specific.
 #import <Cocoa/Cocoa.h>
+#import <os/log.h>
 #include "Bridge.h"
 #include "include/cef_app.h"
 #include "include/cef_application_mac.h"
@@ -9,11 +10,14 @@
 #include "include/cef_command_line.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_parser.h"
+#include "include/base/cef_callback.h"
+#include "include/wrapper/cef_closure_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
 #include <map>
 #include <set>
 #include <string>
+#include <chrono>
 
 namespace {
 class Client;
@@ -36,6 +40,72 @@ CefRefPtr<CefDictionaryValue> Dictionary(const void* bytes, size_t count) {
   auto v = CefParseJSON(CefString(static_cast<const char*>(bytes), count), JSON_PARSER_RFC);
   return v && v->GetType() == VTYPE_DICTIONARY ? v->GetDictionary() : nullptr;
 }
+// Passive CEF lifecycle diagnostics. No request/response bodies, query strings,
+// authentication headers, filters, request changes or automatic retries.
+std::string DiagnosticRoute(const CefString& url) {
+  NSURL* u = [NSURL URLWithString:[NSString stringWithUTF8String:url.ToString().c_str()]];
+  static NSSet<NSString*>* words = [NSSet setWithArray:@[@"backend-api", @"api", @"f", @"conversation", @"conversations",
+    @"prepare", @"init", @"sentinel", @"chat-requirements", @"accounts", @"check", @"me", @"models", @"v1", @"v2", @"v3", @"v4",
+    @"ces", @"lat", @"r", @"events", @"event", @"stream", @"telemetry", @"beacons", @"ping", @"settings", @"preferences",
+    @"projects", @"project", @"gizmos", @"gizmo", @"sidebar", @"recent", @"tasks", @"codex", @"notifications", @"attachments"]];
+  NSMutableArray<NSString*>* parts = [NSMutableArray array];
+  for (NSString* part in u.path.pathComponents) {
+    if ([part isEqual:@"/"]) continue;
+    [parts addObject:[words containsObject:part] ? part : @"<redacted>"];
+    if (parts.count == 6) break;
+  }
+  return std::string([[ @"/" stringByAppendingString:[parts componentsJoinedByString:@"/"]] UTF8String]);
+}
+void TransportEvent(int64_t key, int browser, const std::string& metadata) {
+  CEF_REQUIRE_UI_THREAD();
+  static os_log_t log = os_log_create(NSBundle.mainBundle.bundleIdentifier.UTF8String, "ReplyTransport");
+  os_log_with_type(log, OS_LOG_TYPE_DEFAULT, "session=%lld browser=%d %{public}s", key, browser, metadata.c_str());
+  op_native_event(key, browser, "transport", metadata.c_str());
+}
+class ResourceDiagnostics final : public CefResourceRequestHandler {
+ public:
+  ResourceDiagnostics(int64_t key, int browser) : key_(key), browser_(browser), began_(std::chrono::steady_clock::now()) {}
+  bool OnResourceResponse(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefRequest> request,
+                          CefRefPtr<CefResponse> response) override {
+    CEF_REQUIRE_IO_THREAD();
+    if (!Origin(request->GetURL()).empty() && response->GetMimeType() == "text/event-stream") {
+      stream_ = true; Record("response", request, response, UR_IO_PENDING, 0);
+    }
+    return false;
+  }
+  void OnResourceLoadComplete(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefRequest> request,
+                              CefRefPtr<CefResponse> response, URLRequestStatus status, int64_t bytes) override {
+    CEF_REQUIRE_IO_THREAD();
+    if (Origin(request->GetURL()).empty()) return;
+    if (stream_ || response->GetMimeType() == "text/event-stream" || status != UR_SUCCESS || response->GetStatus() >= 400)
+      Record("end", request, response, status, bytes);
+  }
+ private:
+  void Record(const char* phase, CefRefPtr<CefRequest> request, CefRefPtr<CefResponse> response,
+              URLRequestStatus status, int64_t bytes) {
+    auto p = CefDictionaryValue::Create();
+    p->SetString("phase", phase);
+    p->SetString("request", std::to_string(request->GetIdentifier())); // CEF-local number, not a website ID.
+    p->SetBool("stream", stream_ || response->GetMimeType() == "text/event-stream");
+    p->SetInt("status", status); p->SetInt("http", response->GetStatus()); p->SetInt("error", response->GetError());
+    p->SetString("route", DiagnosticRoute(request->GetURL()));
+    const auto method = request->GetMethod().ToString();
+    p->SetString("method", method == "GET" || method == "POST" || method == "OPTIONS" ? method : "other");
+    const auto mime = response->GetMimeType().ToString();
+    p->SetString("mime", mime == "text/html" || mime == "text/event-stream" || mime == "application/json" || mime == "text/plain" ? mime : "other");
+    // Read only the fixed non-authentication challenge flag, never enumerate headers.
+    p->SetBool("challenge", response->GetHeaderByName("cf-mitigated") == "challenge");
+    p->SetDouble("bytes", static_cast<double>(bytes));
+    p->SetDouble("milliseconds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began_).count());
+    auto value = CefValue::Create(); value->SetDictionary(p);
+    std::string metadata = CefWriteJSON(value, JSON_WRITER_DEFAULT);
+    CefPostTask(TID_UI, base::BindOnce(&TransportEvent, key_, browser_, metadata));
+  }
+  const int64_t key_; const int browser_;
+  const std::chrono::steady_clock::time_point began_;
+  bool stream_ = false;
+  IMPLEMENT_REFCOUNTING(ResourceDiagnostics);
+};
 class Client final : public CefClient, public CefLifeSpanHandler, public CefLoadHandler,
                      public CefDisplayHandler, public CefRequestHandler,
                      public CefDownloadHandler, public CefDevToolsMessageObserver {
@@ -47,7 +117,23 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   void Event(const char* event, const std::string& value = "") {
+    if (std::string(event) == "replyEnded" || std::string(event) == "loadError" ||
+        std::string(event) == "rendererTerminated" || std::string(event) == "closed") {
+      // Fixed lifecycle names only; completion payloads contain private IDs.
+      static os_log_t log = os_log_create(NSBundle.mainBundle.bundleIdentifier.UTF8String, "ReplyTransport");
+      os_log_with_type(log, OS_LOG_TYPE_DEFAULT, "session=%lld browser=%d lifecycle=%{public}s", key_,
+                       browser_ ? browser_->GetIdentifier() : 0, event);
+    }
     op_native_event(key_, browser_ ? browser_->GetIdentifier() : 0, event, value.c_str());
+  }
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request, bool navigation, bool download,
+      const CefString& initiator, bool&) override {
+    CEF_REQUIRE_IO_THREAD();
+    const auto origin = Origin(request->GetURL());
+    if (!browser || !frame || !frame->IsMain() || navigation || download || request->GetResourceType() != RT_XHR ||
+        origin.empty() || initiator.ToString() != origin) return nullptr;
+    return new ResourceDiagnostics(key_, browser->GetIdentifier());
   }
   int Command(const std::string& method, CefRefPtr<CefDictionaryValue> params = nullptr) {
     return browser_->GetHost()->ExecuteDevToolsMethod(++command_, method, params);
@@ -252,7 +338,7 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     p->SetBool("returnByValue", true); diagnostic_ = Command("Runtime.evaluate", p);
   }
   void TestIsolation() {
-    auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__opReplyEnded === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined'");
+    auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__opReplyEnded === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined' && typeof globalThis.__opConsultation === 'undefined' && typeof globalThis.__opSendExecutionQuery === 'undefined'");
     p->SetBool("returnByValue", true); isolationTest_ = Command("Runtime.evaluate", p);
   }
   void Query(const std::string& payload) {
@@ -361,6 +447,12 @@ int main(int argc, char* argv[]) {
     NSString* completion = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"ReplyCompletion" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
     if (!completion) return 2;
     worldSource += "\n"; worldSource += completion.UTF8String;
+    // Consultation uses the same restricted world and existing query result channel.
+    worldSource += "\nglobalThis.__opSendExecutionQuery = (" + querySource + ");";
+    NSString* consultation = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"Consultation" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
+    if (!consultation) return 2;
+    worldSource += "\n"; worldSource += consultation.UTF8String;
+    querySource = "(config => config.consultation ? globalThis.__opConsultation(config) : globalThis.__opSendExecutionQuery(config))";
     const std::string marker = "__OP_FIXTURE_ORIGIN__";
     size_t pos;
     while ((pos = worldSource.find(marker)) != std::string::npos) worldSource.replace(pos, marker.size(), fixtureOrigin);

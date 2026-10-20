@@ -74,6 +74,7 @@ add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/compose-observer.py" "${OP_ROOT}/ChatGPTNative/Services/MessageObserver.js" "${CEF_APP}/Contents/Resources/CEFObserver.js"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ExecutionQuery.js" "${CEF_APP}/Contents/Resources/ExecutionQuery.js"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ReplyCompletion.js" "${CEF_APP}/Contents/Resources/ReplyCompletion.js"
+ COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/Consultation.js" "${CEF_APP}/Contents/Resources/Consultation.js"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/package-icon.py" "${OP_ROOT}/ChatGPTNative/Assets.xcassets/AppIcon.appiconset" "${CEF_APP}/Contents/Resources/OP.icns"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Resources/LICENSE-CEF.txt" "${CEF_APP}/Contents/Resources/LICENSE-CEF.txt"
  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Header" "${CEF_APP}/Contents/Resources/Header"

@@ -295,6 +295,7 @@ private final class HeaderButton: NSButton {
     var statusItem: NSStatusItem?
     var selfTest: CEFIntegrationTests?
     var replyNotifications = ReplyNotifications()
+    lazy var consultations = ConsultationBridge(product: self)
     private(set) var appearance = ProductAppearance(rawValue: UserDefaults.standard.string(forKey: "nativeAppearance") ?? "") ?? .system
     private var appearanceItems: [NSMenuItem] = []
     func nextKey() -> Int64 { key += 1; return key }
@@ -327,6 +328,9 @@ private final class HeaderButton: NSButton {
         }
         item(page, "回复保护状态…", #selector(protection))
         item(page, "查询 CLINX 执行情况", #selector(queryExecution))
+        item(page, "连接 CLINX 咨询 MCP…", #selector(configureConsultations))
+        item(page, "绑定当前 ChatGPT 对话…", #selector(bindConsultation))
+        item(page, "咨询桥接状态…", #selector(consultationStatus))
         let notifications = page.addItem(withTitle: "后台回复完成提醒", action: #selector(toggleReplyNotifications(_:)), keyEquivalent: "")
         notifications.target = self; notifications.state = replyNotifications.enabled ? .on : .off
         item(page, "诊断消息识别（仅元数据）", #selector(diagnose))
@@ -352,6 +356,7 @@ private final class HeaderButton: NSButton {
         }
         NSApp.activate(ignoringOtherApps: true)
         replyNotifications.start()
+        if !CommandLine.arguments.contains("--self-test") { _ = consultations }
     }
     @objc func newWindow() { openWindow(url: URL(string: "https://chatgpt.com/")) }
     func openWindow(url: URL?) { let scene = ProductWindow(library: library, url: url); windows.append(scene) }
@@ -374,6 +379,9 @@ private final class HeaderButton: NSButton {
     }
     @objc func protection() { focused?.protection(nil) }
     @objc func queryExecution() { focused?.queryExecution() }
+    @objc func configureConsultations() { consultations.configure() }
+    @objc func bindConsultation() { consultations.bindCurrent() }
+    @objc func consultationStatus() { consultations.showStatus() }
     @objc func toggleReplyNotifications(_ sender: NSMenuItem) {
         replyNotifications.enabled.toggle()
         UserDefaults.standard.set(replyNotifications.enabled, forKey: "replyNotificationsEnabled")
@@ -383,6 +391,7 @@ private final class HeaderButton: NSButton {
     @objc func diagnose() { if let session = focused?.workspace.active { op_cef_action(session.browser, 4) } }
     @objc func quit() {
         guard !quitting else { return }; quitting = true
+        consultations.stop()
         Task { for window in windows { await window.workspace.close() }; op_cef_quit() }
     }
     func remove(_ window: ProductWindow) { windows.removeAll { $0 === window } }
@@ -410,6 +419,15 @@ private final class HeaderButton: NSButton {
     switch name {
     case "replyEnded": NativeProduct.shared.replyNotifications.receive(value, session: session)
     case "executionQuery": session.queryResult(value)
+    case "transport":
+        if let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any],
+           let status = object["http"] as? Int, [403, 429].contains(status) {
+            session.consultationHTTPFailure = status
+            session.consultationHTTPChallenge = object["challenge"] as? Bool == true
+            session.error = session.consultationHTTPChallenge
+                ? "Cloudflare 浏览器验证未完成（HTTP \(status)），交接暂停，请在官方页面完成验证。"
+                : "官方网页请求失败（HTTP \(status)），交接暂停"
+        }
     case "diagnostic":
         if let raw = value.data(using: .utf8), var object = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] {
             if let window = NativeProduct.shared.focused?.window {
@@ -444,6 +462,9 @@ private final class HeaderButton: NSButton {
     case "observerFailed", "bridgeRejected": session.observerAvailable = false; session.error = "本地消息观察不可用，已保存副本保留"
     case "http":
         session.lastHTTPStatus = Int(value)
+        if let status = Int(value), (200..<300).contains(status) {
+            session.consultationHTTPFailure = nil; session.consultationHTTPChallenge = false
+        }
         if let status = Int(value), status >= 400 { session.pageState = .readFailure; session.error = "官方网页读取失败（HTTP \(status)）"; session.readableConversation = nil }
     case "loadError", "rendererTerminated":
         session.pageState = .interrupted; session.readableConversation = nil; session.error = "网页进程或加载中断，可从保护状态重试"
