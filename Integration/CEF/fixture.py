@@ -74,6 +74,7 @@ const renderReceipt=text=>{{
 }};
 for(const text of JSON.parse(localStorage.getItem(historyKey)||'[]')) renderReceipt(text);
 send.addEventListener('click',()=>{{
+ if(form.dataset.requireStreaming==='true' && document.querySelector('article').dataset.talvtTurnState!=='in_progress') return;
  const text=editor.innerText;editor.textContent='';send.disabled=true;
  if(form.dataset.suppressBubble==='true') {{
   for(const user of document.querySelectorAll('main > [data-content-search-unit-key$=":user"], main > [data-message-author-role="user"]')) user.replaceWith(user.cloneNode(true));
@@ -112,6 +113,17 @@ send.addEventListener('click',()=>{{
  if(action===34) form.dataset.hiddenBubbles='true';
  if(action===35) delete form.dataset.hiddenBubbles;
  if(action===36) form.dataset.replaceReceipt='true';
+ if(action===38) {{
+  article.dataset.talvtTurnState='in_progress';article.dataset.isStreaming='true';form.dataset.requireStreaming='true';
+  const stop=document.querySelector('[data-testid="stop-button"]');stop.hidden=false;stop.type='submit';form.append(stop);
+  send.type='button';send.dataset.testid='send-button';
+ }}
+ if(action===39) {{
+  article.dataset.talvtTurnState='complete';delete article.dataset.isStreaming;delete form.dataset.requireStreaming;
+  const stop=document.querySelector('[data-testid="stop-button"]');stop.hidden=true;document.body.append(stop);
+  send.type='submit';delete send.dataset.testid;
+ }}
+ if(action===40) editor.addEventListener('input',()=>window.fixture(38),{{once:true}});
  if(action===37) {{
   for(const node of document.querySelectorAll('main > [data-content-search-unit-key$=":user"]')) {{
    node.dataset.messageAuthorRole='user';node.removeAttribute('data-content-search-unit-key');

@@ -579,3 +579,32 @@ All testing uses a separately identified synthetic CEF app, mock keychain and
 isolated profile; no real work query is submitted. This publication does not
 replace or restart the installed OP app; the new missing-key guard requires a
 subsequent app build/install to become active in the user's running app.
+
+
+## 2026-10-22 explicit queries during generation
+
+The user removed the generation-idle requirement for explicit query clicks.
+`ExecutionQuery.js` no longer scans streaming/turn markers or rejects an explicit
+query before or during insertion because ChatGPT is generating. It uses the
+webpage's available send/queue control, excluding Stop controls even when they
+are submit buttons. Drafts, attachments, modals, conversation identity, duplicate
+click protection and stable new-message confirmation keep their existing behavior.
+Unavailable sends remain drafts and uncertain sends are never automatically retried.
+
+The isolated signed Release passed 99 core checks and four restart checks:
+`build/CEFIntegration/evidence/run-20261022-041005/`. The new cases verify sending
+with streaming turn metadata, a visible Stop control beside a queue control, and
+generation beginning during text insertion. The queue fixture only acknowledges
+a query while the original turn remains in progress. This proves the real CEF
+DOM/native flow against a synthetic page; live ChatGPT queue acceptance is not
+claimed. Tests use a separate bundle/profile and their native windows close on exit.
+Build/signing logs and the source before-image are under
+`build/query-during-generation-20261021T200925Z/`.
+
+The production-identity Release also built and passed strict deep signature
+verification. On iMac, `/Applications/OP.app` was backed up, normally quit,
+replaced and relaunched. Installed executable, native library, Info.plist and
+query resource hashes match the signed candidate; the query resource SHA256 is
+`29ab45cbec91d23b072a2bd582fe274967acdf4183a42f566c10acd20a0d7060`.
+See `installation-receipt.json` and `rollback-receipt.json` in the task evidence
+directory. No ChatGPT query or CLINX execution was dispatched for live acceptance.

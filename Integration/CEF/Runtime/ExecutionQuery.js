@@ -12,9 +12,7 @@
   };
   const identity = () => location.pathname.match(/^\/c\/([0-9a-f-]{36})\/?$/i)?.[1]?.toLowerCase() === config.conversation;
   if (window !== top || !identity()) return reply('waiting', '请先打开要查询的 ChatGPT 对话。');
-  const busy = () => [...document.querySelectorAll('button[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="停止生成"], [data-is-streaming="true"], [data-talvt-turn-state="in_progress"]')].some(visible);
   const modal = () => [...document.querySelectorAll('[role="dialog"], [aria-modal="true"]')].some(visible);
-  if (busy()) return reply('waiting', 'ChatGPT 正在生成，请结束后再点击收取。');
   if (modal()) return reply('waiting', '请先关闭网页对话框。');
   const editors = [...document.querySelectorAll('form [contenteditable="true"]')].filter(visible);
   if (editors.length !== 1) return reply('waiting', '未找到 ChatGPT 输入框。');
@@ -35,7 +33,7 @@
   // A previous identical query does not suppress a new explicit click.
   // History may be unmounted as the new turn arrives; its total count need not grow.
   const previous = new Set(matches().map(messageKey));
-  if (Date.now() > config.deadline || !identity() || busy() || modal() || attachments()) return reply('waiting', '页面状态已改变，请重新点击收取。');
+  if (Date.now() > config.deadline || !identity() || modal() || attachments()) return reply('waiting', '页面状态已改变，请重新点击收取。');
   if (config.preflight === true) return reply('ready');
   editor.focus();
   if (document.activeElement !== editor) return reply('waiting', '输入框无法获得焦点。');
@@ -43,9 +41,11 @@
   range.selectNodeContents(editor); range.collapse(false); selection.removeAllRanges(); selection.addRange(range);
   if (!document.execCommand('insertText', false, config.message)) return reply('uncertain', '未能写入查询，请检查输入框。');
   for (let i = 0; i < 20; i++) {
-    if (Date.now() > config.deadline || !identity() || !editor.isConnected || !visible(editor) || busy() || modal() || attachments() ||
+    if (Date.now() > config.deadline || !identity() || !editor.isConnected || !visible(editor) || modal() || attachments() ||
         normalize(editor.innerText) !== normalize(config.message)) return reply('uncertain', '页面或输入已改变，未继续发送；请检查当前对话和草稿。');
-    const buttons = [...form.querySelectorAll('button[type="submit"]')].filter(visible);
+    // Use the webpage's send/queue control; a Stop control may also be a submit button.
+    const buttons = [...form.querySelectorAll('button[data-testid="send-button"], button[type="submit"]')]
+      .filter(node => visible(node) && !node.matches('[data-testid="stop-button"], [aria-label="Stop generating"], [aria-label="停止生成"]'));
     if (buttons.length === 1 && !buttons[0].disabled && buttons[0].getAttribute('aria-disabled') !== 'true') {
       buttons[0].click();
       for (let j = 0; j < 60; j++) {

@@ -101,7 +101,8 @@ The old task inbox and automatic identification/delivery code have been removed.
 Existing local inbox files and Keychain entries are left untouched and unused.
 
 The button requires a loaded conversation and an empty composer with no
-attachments, visible modal or active generation. It preserves drafts and explains
+attachments or a visible modal. Active generation does not block an explicit query;
+OP uses the webpage’s available send/queue control without clicking Stop. It preserves drafts and explains
 why it cannot send. It disables while a query is being sent and verifies a new
 matching user bubble; uncertain sends are never automatically retried. After a
 finished query, another explicit click can query again. No private website API

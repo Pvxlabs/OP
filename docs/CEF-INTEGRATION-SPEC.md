@@ -24,10 +24,12 @@ conversation. ChatGPT owns task identity, CLINX status lookup and result analysi
 Remove automatic identification, pairing/binding UI and stores, Observer access,
 polling and automatic result delivery from OP. Preserve existing files/Keychain
 entries without reading or writing them. Keep night mode and all unrelated
-browser/protection behavior. Do not send over drafts, attachments, active
-responses or visible modals. Disable concurrent clicks, verify a newly submitted
+browser/protection behavior. Do not send over drafts, attachments or visible
+modals. Explicit queries are allowed during generation using the webpage’s
+available send/queue control; do not click Stop or infer a generation lock from
+streaming markers. Disable concurrent clicks, verify a newly submitted
 user bubble, permit a later explicit repeat, and never auto-retry uncertain sends.
-Acceptance requires real CEF composer/native-button tests, draft/busy/attachment/
+Acceptance requires real CEF composer/native-button tests, draft/streaming-send/attachment/
 modal/navigation/no-readback guards, existing appearance/protection/restart
 regression, strict signing, and a backed-up Air installation matching the candidate.
 Real-site/UI evidence is recorded separately from synthetic checks.
