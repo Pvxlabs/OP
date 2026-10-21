@@ -104,6 +104,9 @@ import AppKit
                 try check((await product.library.messages(a)).count == 1, "subframe snapshot rejected despite same origin and conversation")
                 let hash = initial[0].fingerprint
                 let originalAppearance = product.appearance
+                NSApp.activate(ignoringOtherApps: true)
+                scene.window!.makeKeyAndOrderFront(nil)
+                try await wait("test window focus") { NSApp.isActive && scene.window!.isKeyWindow }
                 product.setAppearance(.light)
                 metrics["titlebarPoints"] = scene.window!.frame.height - scene.window!.contentLayoutRect.height
                 try check(abs(metrics["titlebarPoints"]! - 40) < 0.1, "native titlebar measured height is 40 pt")

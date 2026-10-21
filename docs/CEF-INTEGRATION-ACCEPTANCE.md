@@ -466,3 +466,116 @@ run-20261020-065901. Publication and cleanup receipts are under
 build/Publish-034-20261020. Redundant build caches and transfer archives were
 recycled after live-file checks; installed data, SDK, rollback apps and evidence
 were retained. Raw account data and bundle artifacts remain untracked.
+
+
+## 2026-10-20 query confirmation correction — iMac
+
+The installed application reported an uncertain send even though its fixed query
+and a following assistant reply were visible. Readback required both a layout
+box on the user wrapper and an increase in the count of identical visible queries.
+A `display: contents` wrapper has rendered content without its own box; removing
+an older query as a new one arrives also leaves that count unchanged. Readback
+now checks rendered contents and newly observed message keys. Re-rendered history
+with the same keys cannot confirm a send. No send retry or alert suppression was
+added; missing/hidden receipts, changed conversations and protected drafts remain
+conservative failures.
+
+The old implementation failed the real CEF display-contents regression after
+52 passing checks in `build/CEFIntegration/evidence/run-20261020-205714`.
+The corrected pre-sync build passed 75 core and 4 restart checks in
+`build/CEFIntegration/evidence/run-20261020-210441`, including native-button
+submission, replacement of an older identical bubble, hidden receipts and
+re-mounted history without a new receipt. The test harness now explicitly waits
+for its window to gain focus before asserting active-header colors.
+
+The repository was subsequently fast-forwarded to `ce33b46`, preserving its
+consultation preflight and transport changes; query fixture controls use separate
+numbers from the new transport controls. Final latest-baseline validation and
+installation evidence follow.
+
+Live-site scope: read-only diagnostics and restored-window review. The original
+page reported zero wrapper rectangles before restart; its reloaded wrappers were
+ordinary visible blocks. The exact transient CSS state at the original click was
+not captured, so the fixture reproduction is not presented as proof of that
+particular live DOM state. No new query was sent into a real work conversation.
+
+
+Latest-baseline evidence: `build/CEFIntegration/evidence/run-20261020-210713`.
+The query/protection/appearance/notification checks passed; the full core run
+recorded 85 passing checks before the upstream transport cancellation assertion
+failed. Its expected Chromium error is -3, but this iMac reports -2 at cancellation
+with UR_FAILED and HTTP 200. A transport-only repeat in
+`build/CEFIntegration/evidence/run-20261020-210918` reproduced the same mismatch.
+This unrelated assertion/runtime distinction was left unchanged. A separate run
+of the latest package against the same synthetic SQLite store passed all four
+restart checks. The entire latest core suite is therefore FAIL, not all-pass.
+
+Release build and strict deep Apple Development signing passed on iMac after
+installing Apple's public WWDR G3 intermediate certificate through its normal
+trust chain. No private key was transferred. Final installation has 283 matching
+candidate file hashes and preserved all 141 prior reply fingerprints. Receipt:
+`build/query-confirmation-transfer/final-installation.json`. Original rollback:
+`~/Library/Application Support/OP/Backups/QueryConfirmation-20261020-210100/OP.app`;
+the intermediate installation is also backed up beside it. The installed app
+restored the original conversation with no sheet. Immediately before the final
+update, native accessibility reported the real button tooltip as 查询已发送；再次点击可重新查询执行情况
+following a user-initiated query; automation did not send that query.
+
+Air was used only for an initial isolated signing attempt before the iMac
+certificate chain became available. Its checkout and installed app were untouched;
+this run's temporary transfer directories and listeners were removed/stopped.
+
+## 2026-10-21 query readback provenance audit and publication
+
+The seven remaining dirty files originate from the local task
+“同步仓库并修复异常弹窗” on 2026-10-20. Its user request, recorded edits and final
+report agree with the entry patch and SHA256 manifest preserved before the
+long-conversation investigation. Commit `1560b31` deliberately excluded those
+changes; this follow-up is separately authorized for commit and push.
+
+- `ExecutionQuery.js`: recognize visible `display: contents` contents and new
+  matching search-unit keys instead of requiring a higher identical-message count.
+- `ExecutionQueryTests.swift` and `fixture.py`: cover contents wrappers, old-query
+  removal, hidden receipts and history remounts without a new query.
+- `IntegrationTests.swift`: make the isolated test window active/key before
+  checking focused header appearance; no production focus policy changes.
+- `Runtime.mm`: add display/rendered-child layout metadata to the existing manual
+  message diagnostic; it neither submits queries nor changes page layout.
+- The SPEC and this acceptance record state the readback contract and preserve
+  historical build, installation and failure evidence.
+
+Historical records were checked directly: `run-20261020-205714` failed the
+contents-wrapper case after 52 checks; `run-20261020-210441` passed 75 core and
+four restart checks. On the later baseline, `run-20261020-210713` failed after
+85 checks at the unrelated transport-cancellation assertion; the query cases
+passed. The 2026-10-21 `run-20261021-111529` record passed 95 core/four restart
+checks with these original changes present. This does not erase the earlier
+failure or establish that cancellation behavior is fixed.
+
+Audit found one missing negative case: for role-only user nodes without a stable
+search-unit key, the proposed fallback used the DOM node object as identity.
+Cloning/remounting old matching history could therefore report `sent` with no new
+query receipt. The isolated reproduction in
+`build/remaining-changes-audit-20261021/source/build/CEFIntegration/evidence/run-20261021-121134/`
+failed the expected-uncertain assertion and recorded `roleOnlyRemountReportedSent=1`.
+
+The follow-up removes that fallback from confirmation: only a nonempty stable
+supported message key absent from the pre-send set can confirm a query. Unknown
+identity remains uncertain; no automatic retry is added. The new real-CEF
+regression remounts role-only history without producing a new receipt. Original
+seven-file sources and patch remain in `build/remaining-changes-audit-20261021/`.
+
+Final validation: Release build and strict deep signing PASS; full core 97 checks
+and restart four checks PASS. Evidence:
+`build/remaining-changes-audit-20261021/source/build/CEFIntegration/evidence/run-20261021-121358/`.
+The new role-only-remount assertion and all original query guards pass. The
+historically unstable cancellation assertion also passed this run, unchanged;
+this is not a cancellation-path repair. The local test runner allowed 240 seconds
+instead of 180 for the full core phase because the diagnostic probes add two
+30-second sampling windows. No assertion was weakened or skipped, and the
+repository runner's limit remains unchanged.
+
+All testing uses a separately identified synthetic CEF app, mock keychain and
+isolated profile; no real work query is submitted. This publication does not
+replace or restart the installed OP app; the new missing-key guard requires a
+subsequent app build/install to become active in the user's running app.

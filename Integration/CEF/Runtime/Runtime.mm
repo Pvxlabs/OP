@@ -409,7 +409,9 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
         messageUnits: [...document.querySelectorAll('[data-content-search-unit-key]')].slice(-8).map(n => ({
           key:n.getAttribute('data-content-search-unit-key'), role:n.getAttribute('data-message-author-role'),
           userBodies:n.querySelectorAll('[data-message-author-role="user"]').length,
-          visible:n.getClientRects().length > 0, characters:(n.innerText || '').trim().length
+          visible:n.getClientRects().length > 0, display:getComputedStyle(n).display,
+          renderedChild:[...n.querySelectorAll('*')].some(child => child.getClientRects().length > 0),
+          characters:(n.innerText || '').trim().length
         })),
         selectionCount: document.querySelectorAll('[data-chatgpt-selection-conversation-id]').length,
         composers: [...document.querySelectorAll('textarea, [contenteditable]')].slice(-12).map(n => ({

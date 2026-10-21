@@ -130,3 +130,16 @@ iMac remains locked. Inspect light/night focused, unfocused and hover header
 renders on Air before installing, then verify the installed window. Finish by
 closing isolated processes/listeners and unregistering review app copies.
 Preserve production data, notification preferences and a rollback app bundle.
+
+## Query submission readback — 2026-10-20
+
+Confirm a newly observed matching user-message identity after an explicit send;
+do not require the total number of identical queries to increase. History may
+be unmounted while the new turn arrives. Retain existing search-unit keys across
+DOM remounts so re-rendered history alone cannot confirm a send. When a user
+wrapper uses `display: contents`, inspect its rendered contents rather than
+requiring the wrapper to have a layout box. Truly hidden messages still cannot
+confirm submission. A matching node without a stable supported message key
+cannot confirm submission; DOM object identity alone is insufficient after a remount.
+Preserve draft/busy/modal/attachment/navigation guards,
+read-only consultation preflight, and the rule against automatic retries.

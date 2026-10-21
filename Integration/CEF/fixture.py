@@ -43,13 +43,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
 <form id="composer" onsubmit="return false">
 <div contenteditable="true" aria-label="Synthetic message"></div>
 <button type="submit" aria-label="Send" disabled>Send synthetic message</button></form>
-<style>[contenteditable]{{border:1px solid gray;min-height:32px;margin-top:20px}}</style>
+<style>[contenteditable]{{border:1px solid gray;min-height:32px;margin-top:20px}}
+body:has(form[data-contents-bubbles="true"]) [data-content-search-unit-key$=":user"] {{display:contents}}
+body:has(form[data-hidden-bubbles="true"]) [data-content-search-unit-key$=":user"] {{display:none}}
+</style>
 <script>
 const editor=document.querySelector('[contenteditable]'),form=document.getElementById('composer'),send=form.querySelector('button');
 editor.addEventListener('input',()=>{{send.disabled=!editor.innerText.trim()||form.dataset.noSend==='true';}});
 const historyKey='op-query-'+location.pathname;
+let receipt=0;
 const renderReceipt=text=>{{
- const user=document.createElement('div');user.dataset.contentSearchUnitKey='fixture:receipt:user';
+ const user=document.createElement('div');user.dataset.contentSearchUnitKey='fixture:receipt:'+ ++receipt +':user';
  const content=document.createElement('span');content.textContent=text;user.append(content);
  document.querySelector('main').append(user);
  const turn=document.createElement('article');turn.dataset.talvtTurnState='complete';
@@ -71,7 +75,11 @@ const renderReceipt=text=>{{
 for(const text of JSON.parse(localStorage.getItem(historyKey)||'[]')) renderReceipt(text);
 send.addEventListener('click',()=>{{
  const text=editor.innerText;editor.textContent='';send.disabled=true;
- if(form.dataset.suppressBubble==='true') return;
+ if(form.dataset.suppressBubble==='true') {{
+  for(const user of document.querySelectorAll('main > [data-content-search-unit-key$=":user"], main > [data-message-author-role="user"]')) user.replaceWith(user.cloneNode(true));
+  return;
+ }}
+ if(form.dataset.replaceReceipt==='true') document.querySelector('main > [data-content-search-unit-key$=":user"]')?.remove();
  renderReceipt(text);
  const saved=JSON.parse(localStorage.getItem(historyKey)||'[]');saved.push(text);localStorage.setItem(historyKey,JSON.stringify(saved));
 }});
@@ -100,6 +108,16 @@ send.addEventListener('click',()=>{{
  if(action===24) {{editor.addEventListener('input',()=>{{editor.textContent='User changed draft';}},{{once:true}});}}
  if(action===25) {{editor.addEventListener('input',()=>{{history.replaceState(null,'','/c/99999999-9999-4999-8999-999999999999');}},{{once:true}});}}
  if(action===28) document.querySelector('[aria-label="Stop generating"]').click();
+ if(action===33) form.dataset.contentsBubbles='true';
+ if(action===34) form.dataset.hiddenBubbles='true';
+ if(action===35) delete form.dataset.hiddenBubbles;
+ if(action===36) form.dataset.replaceReceipt='true';
+ if(action===37) {{
+  for(const node of document.querySelectorAll('main > [data-content-search-unit-key$=":user"]')) {{
+   node.dataset.messageAuthorRole='user';node.removeAttribute('data-content-search-unit-key');
+  }}
+  form.dataset.suppressBubble='true';
+ }}
  if(action===26) {{editor.addEventListener('input',()=>{{document.getElementById('test-modal')?.remove();window.fixture(14);}},{{once:true}});}}
  if(action>=29 && action<=32) {{
    const kind=['normal','truncated','http-error','cancel'][action-29];
