@@ -334,6 +334,9 @@ private final class HeaderButton: NSButton {
         let notifications = page.addItem(withTitle: "后台回复完成提醒", action: #selector(toggleReplyNotifications(_:)), keyEquivalent: "")
         notifications.target = self; notifications.state = replyNotifications.enabled ? .on : .off
         item(page, "诊断消息识别（仅元数据）", #selector(diagnose))
+        item(page, "采集性能基线（30 秒，仅计数）", #selector(measurePerformance))
+        item(page, "测量本次刷新（最多 60 秒，仅计时）", #selector(measureReload))
+        item(page, "结束刷新计时并保存", #selector(finishLoadMeasurement))
         NSApp.mainMenu = menu
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "circle", accessibilityDescription: "OP CEF Integration")
@@ -388,6 +391,11 @@ private final class HeaderButton: NSButton {
         sender.state = replyNotifications.enabled ? .on : .off
         if replyNotifications.enabled { replyNotifications.requestPermission() }
     }
+    @objc func measurePerformance() { if let session = focused?.workspace.active { op_cef_action(session.browser, 5) } }
+    @objc func measureReload() {
+        if let session = focused?.workspace.active { op_cef_action(session.browser, 6) }
+    }
+    @objc func finishLoadMeasurement() { if let session = focused?.workspace.active { op_cef_action(session.browser, 7) } }
     @objc func diagnose() { if let session = focused?.workspace.active { op_cef_action(session.browser, 4) } }
     @objc func quit() {
         guard !quitting else { return }; quitting = true
@@ -417,6 +425,7 @@ private final class HeaderButton: NSButton {
     guard let (workspace, session) = NativeProduct.shared.session(key) else { return }
     NativeProduct.shared.selfTest?.event(name, browser: browser, value: value)
     switch name {
+    case "loadPerformanceStarted": session.error = nil; session.readableConversation = nil
     case "replyEnded": NativeProduct.shared.replyNotifications.receive(value, session: session)
     case "executionQuery": session.queryResult(value)
     case "transport":
@@ -427,6 +436,19 @@ private final class HeaderButton: NSButton {
             session.error = session.consultationHTTPChallenge
                 ? "Cloudflare 浏览器验证未完成（HTTP \(status)），交接暂停，请在官方页面完成验证。"
                 : "官方网页请求失败（HTTP \(status)），交接暂停"
+        }
+    case "performance", "loadPerformance":
+        if let raw = value.data(using: .utf8), var object = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] {
+            object["recordedAt"] = ISO8601DateFormatter().string(from: Date())
+            object["nativeConversationMatched"] = session.conversation != nil && session.readableConversation == session.conversation
+            let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent((Bundle.main.bundleIdentifier ?? "local.personal.OP.CEFIntegration") + "/Diagnostics/Performance")
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            if let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) {
+                let file = directory.appendingPathComponent("sample-" + UUID().uuidString + ".json")
+                try? data.write(to: file, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            }
         }
     case "diagnostic":
         if let raw = value.data(using: .utf8), var object = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] {

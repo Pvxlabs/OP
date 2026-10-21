@@ -18,6 +18,9 @@
 #include <set>
 #include <string>
 #include <chrono>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 namespace {
 class Client;
@@ -62,12 +65,53 @@ void TransportEvent(int64_t key, int browser, const std::string& metadata) {
   os_log_with_type(log, OS_LOG_TYPE_DEFAULT, "session=%lld browser=%d %{public}s", key, browser, metadata.c_str());
   op_native_event(key, browser, "transport", metadata.c_str());
 }
+// One manually armed reload; shared with passive IO callbacks. Never stores page data.
+struct LoadTrace {
+  const std::chrono::steady_clock::time_point began = std::chrono::steady_clock::now();
+  std::mutex mutex;
+  bool active = true, truncated = false;
+  std::vector<CefRefPtr<CefDictionaryValue>> events;
+  double Elapsed() const {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
+  }
+  void Add(const char* phase, CefRefPtr<CefDictionaryValue> event = nullptr) {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!active) return;
+    if (events.size() >= 128) { truncated = true; return; }
+    if (!event) event = CefDictionaryValue::Create();
+    event->SetString("phase", phase); event->SetDouble("milliseconds", Elapsed());
+    events.push_back(event);
+  }
+  std::string Finish(bool samePage) {
+    std::lock_guard<std::mutex> lock(mutex); active = false;
+    auto report = CefDictionaryValue::Create(); report->SetInt("schema", 1);
+    report->SetString("kind", "reload"); report->SetDouble("elapsedMilliseconds", Elapsed());
+    report->SetBool("samePage", samePage);
+    report->SetBool("truncated", truncated);
+    auto list = CefListValue::Create(); list->SetSize(events.size());
+    for (size_t i = 0; i < events.size(); ++i) list->SetDictionary(i, events[i]);
+    report->SetList("events", list);
+    auto value = CefValue::Create(); value->SetDictionary(report);
+    return CefWriteJSON(value, JSON_WRITER_DEFAULT);
+  }
+};
+bool ConversationRead(CefRefPtr<CefRequest> request) {
+  if (request->GetMethod() != "GET") return false;
+  NSURL* url = [NSURL URLWithString:[NSString stringWithUTF8String:request->GetURL().ToString().c_str()]];
+  return [url.path hasPrefix:@"/backend-api/conversation/"] || [url.path isEqual:@"/backend-api/conversation"] ||
+         [url.path hasPrefix:@"/backend-api/f/conversation/"] || [url.path isEqual:@"/backend-api/f/conversation"];
+}
 class ResourceDiagnostics final : public CefResourceRequestHandler {
  public:
-  ResourceDiagnostics(int64_t key, int browser) : key_(key), browser_(browser), began_(std::chrono::steady_clock::now()) {}
+  ResourceDiagnostics(int64_t key, int browser, std::shared_ptr<LoadTrace> trace, CefRefPtr<CefRequest> request, bool document)
+      : key_(key), browser_(browser), began_(std::chrono::steady_clock::now()),
+        trace_(trace && (document || ConversationRead(request)) ? trace : nullptr), document_(document) {
+    Trace("Start", request, nullptr, UR_IO_PENDING, 0);
+  }
   bool OnResourceResponse(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefRequest> request,
                           CefRefPtr<CefResponse> response) override {
     CEF_REQUIRE_IO_THREAD();
+    Trace("Response", request, response, UR_IO_PENDING, 0);
     if (!Origin(request->GetURL()).empty() && response->GetMimeType() == "text/event-stream") {
       stream_ = true; Record("response", request, response, UR_IO_PENDING, 0);
     }
@@ -77,10 +121,20 @@ class ResourceDiagnostics final : public CefResourceRequestHandler {
                               CefRefPtr<CefResponse> response, URLRequestStatus status, int64_t bytes) override {
     CEF_REQUIRE_IO_THREAD();
     if (Origin(request->GetURL()).empty()) return;
+    Trace("End", request, response, status, bytes);
     if (stream_ || response->GetMimeType() == "text/event-stream" || status != UR_SUCCESS || response->GetStatus() >= 400)
       Record("end", request, response, status, bytes);
   }
  private:
+  void Trace(const char* phase, CefRefPtr<CefRequest> request, CefRefPtr<CefResponse> response, URLRequestStatus status, int64_t bytes) {
+    if (!trace_) return;
+    auto event = CefDictionaryValue::Create();
+    event->SetString("request", std::to_string(request->GetIdentifier()));
+    event->SetInt("http", response ? response->GetStatus() : 0); event->SetInt("status", status);
+    event->SetDouble("bytes", static_cast<double>(bytes));
+    event->SetDouble("requestMilliseconds", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began_).count());
+    trace_->Add((std::string(document_ ? "documentRequest" : "conversation") + phase).c_str(), event);
+  }
   void Record(const char* phase, CefRefPtr<CefRequest> request, CefRefPtr<CefResponse> response,
               URLRequestStatus status, int64_t bytes) {
     auto p = CefDictionaryValue::Create();
@@ -104,6 +158,8 @@ class ResourceDiagnostics final : public CefResourceRequestHandler {
   const int64_t key_; const int browser_;
   const std::chrono::steady_clock::time_point began_;
   bool stream_ = false;
+  const std::shared_ptr<LoadTrace> trace_;
+  const bool document_;
   IMPLEMENT_REFCOUNTING(ResourceDiagnostics);
 };
 class Client final : public CefClient, public CefLifeSpanHandler, public CefLoadHandler,
@@ -131,9 +187,12 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
       const CefString& initiator, bool&) override {
     CEF_REQUIRE_IO_THREAD();
     const auto origin = Origin(request->GetURL());
-    if (!browser || !frame || !frame->IsMain() || navigation || download || request->GetResourceType() != RT_XHR ||
-        origin.empty() || initiator.ToString() != origin) return nullptr;
-    return new ResourceDiagnostics(key_, browser->GetIdentifier());
+    if (!browser || !frame || !frame->IsMain() || download || origin.empty()) return nullptr;
+    auto trace = std::atomic_load(&loadTrace_);
+    const bool document = navigation && request->GetResourceType() == RT_MAIN_FRAME;
+    if (document && trace) return new ResourceDiagnostics(key_, browser->GetIdentifier(), trace, request, true);
+    if (navigation || request->GetResourceType() != RT_XHR || initiator.ToString() != origin) return nullptr;
+    return new ResourceDiagnostics(key_, browser->GetIdentifier(), trace, request, false);
   }
   int Command(const std::string& method, CefRefPtr<CefDictionaryValue> params = nullptr) {
     return browser_->GetHost()->ExecuteDevToolsMethod(++command_, method, params);
@@ -161,6 +220,7 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
   }
   void OnBeforeClose(CefRefPtr<CefBrowser> b) override {
     CEF_REQUIRE_UI_THREAD(); int id = b->GetIdentifier();
+    FinishLoadTraceNow();
     Event("closed"); contexts_.clear(); pending_.clear(); registration_ = nullptr; browser_ = nullptr;
     clients.erase(id); if (quitting && clients.empty()) CefQuitMessageLoop();
   }
@@ -181,15 +241,20 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     return false;
   }
   void OnLoadingStateChange(CefRefPtr<CefBrowser>, bool loading, bool back, bool forward) override {
+    if (auto trace = std::atomic_load(&loadTrace_)) trace->Add(loading ? "documentLoading" : "documentLoadEnd");
     Event("navigation", std::string(loading ? "1" : "0") + (back ? "1" : "0") + (forward ? "1" : "0"));
   }
   void OnLoadEnd(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f, int status) override {
     if (f->IsMain()) Event("http", std::to_string(status));
   }
   void OnLoadError(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f, ErrorCode code, const CefString&, const CefString&) override {
+    if (f->IsMain()) if (auto trace = std::atomic_load(&loadTrace_)) {
+      auto event = CefDictionaryValue::Create(); event->SetInt("error", code); trace->Add("documentError", event);
+    }
     if (f->IsMain() && code != ERR_ABORTED) Event("loadError", std::to_string(code));
   }
   void OnRenderProcessTerminated(CefRefPtr<CefBrowser>, TerminationStatus, int code, const CefString&) override {
+    if (auto trace = std::atomic_load(&loadTrace_)) trace->Add("rendererTerminated");
     contexts_.clear(); pending_.clear(); Event("rendererTerminated", std::to_string(code));
   }
   bool OnBeforeDownload(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem>, const CefString&, CefRefPtr<CefBeforeDownloadCallback> callback) override {
@@ -211,6 +276,34 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
         auto v = CefValue::Create(); v->SetDictionary(failure); Event("executionQuery", CefWriteJSON(v, JSON_WRITER_DEFAULT));
       }
       queries_.erase(query);
+    }
+    if (id == performanceEnable_) performanceStart_ = Command("Performance.getMetrics");
+    if (id == performanceStart_) {
+      if (success) performanceBefore_ = Dictionary(result, size);
+      auto p = CefDictionaryValue::Create(); p->SetInt("contextId", performanceContext_);
+      p->SetString("expression", "globalThis.__opPerformance.run()");
+      p->SetBool("returnByValue", true); p->SetBool("awaitPromise", true);
+      performanceRun_ = Command("Runtime.evaluate", p);
+    }
+    if (id == performanceRun_) {
+      auto value = success ? Dictionary(result, size) : nullptr;
+      auto remote = value ? value->GetDictionary("result") : nullptr;
+      if (remote && remote->GetType("value") == VTYPE_STRING) {
+        const std::string json = remote->GetString("value");
+        performancePage_ = Dictionary(json.data(), json.size());
+      }
+      performanceEnd_ = Command("Performance.getMetrics");
+    }
+    if (id == performanceEnd_) {
+      auto report = CefDictionaryValue::Create();
+      if (performanceBefore_) report->SetDictionary("rendererBefore", performanceBefore_);
+      if (success) report->SetDictionary("rendererAfter", Dictionary(result, size));
+      if (performancePage_) report->SetDictionary("page", performancePage_);
+      auto value = CefValue::Create(); value->SetDictionary(report);
+      Event("performance", CefWriteJSON(value, JSON_WRITER_DEFAULT));
+      Command("Performance.disable");
+      performanceEnable_ = 0; performanceStart_ = 0; performanceRun_ = 0; performanceEnd_ = 0;
+      performanceBefore_ = nullptr; performancePage_ = nullptr;
     }
     if (id == flush_) Event("flushed");
     if (id == diagnostic_ && success) {
@@ -249,7 +342,10 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
       if (c->GetString("name").ToString() == world_) Event("isolatedContext", std::string(Origin(c->GetString("origin")).empty() ? "originDenied" : "originAllowed") + (aux && aux->GetString("frameId").ToString() == mainFrame_ ? ":main" : ":other"));
       if (c->GetString("name").ToString() == world_ && aux && !aux->GetBool("isDefault") && !Origin(c->GetString("origin")).empty()) {
         contexts_[c->GetInt("id")] = aux->GetString("frameId");
+        if (aux->GetString("frameId").ToString() == mainFrame_)
+          if (auto trace = std::atomic_load(&loadTrace_)) trace->Add("isolatedContext");
         Evaluate(c->GetInt("id"), std::string("globalThis.__opCaptureEnabled = ") + (enabled_ ? "true" : "false") + ";globalThis.__nativeSnapshotSetEnabled?.(globalThis.__opCaptureEnabled)");
+        if (std::atomic_load(&loadTrace_) && aux->GetString("frameId").ToString() == mainFrame_) MeasurePerformance(true);
       }
     } else if (name == "Runtime.bindingCalled") {
       int context = p->GetInt("executionContextId");
@@ -266,6 +362,12 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
       std::string payload = p->GetString("payload"); auto data = Dictionary(payload.data(), payload.size());
       if (!data || !data->GetDictionary("batch") || data->GetInt("request") <= 0) return;
       int request = data->GetInt("request"); pending_[context] = request;
+      if (auto trace = std::atomic_load(&loadTrace_); trace && !loadPreviousContexts_.count(context)) {
+        auto messages = data->GetDictionary("batch")->GetList("messages");
+        if (messages && messages->GetSize() > 0 && loadSnapshotRequest_ == 0) {
+          loadSnapshotRequest_ = request; loadSnapshotContext_ = context; trace->Add("firstReplyBatch");
+        }
+      }
       auto value = CefValue::Create(); value->SetDictionary(data->GetDictionary("batch"));
       std::string json = CefWriteJSON(value, JSON_WRITER_DEFAULT);
       op_native_snapshot(key_, browser_->GetIdentifier(), context, request, url.c_str(), json.c_str());
@@ -280,6 +382,8 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
   void Ack(int context, int request, bool accepted) {
     if (!pending_.count(context) || pending_[context] != request || !contexts_.count(context)) return;
     pending_.erase(context);
+    if (request == loadSnapshotRequest_ && context == loadSnapshotContext_)
+      if (auto trace = std::atomic_load(&loadTrace_)) trace->Add(accepted ? "firstReplyAccepted" : "firstReplyRejected");
     Evaluate(context, "globalThis.__opAck?.(" + std::to_string(request) + "," + (accepted ? "true" : "false") + ")");
   }
   void Flush() {
@@ -337,8 +441,31 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
     })()))JS");
     p->SetBool("returnByValue", true); diagnostic_ = Command("Runtime.evaluate", p);
   }
+  void MeasurePerformance(bool duringMeasuredReload = false) {
+    if (!browser_ || performanceRun_ || (!duringMeasuredReload && std::atomic_load(&loadTrace_)) || Origin(browser_->GetMainFrame()->GetURL()).empty()) return;
+    for (const auto& context : contexts_) if (context.second == mainFrame_) {
+      performanceContext_ = context.first; performanceRun_ = -1;
+      performanceEnable_ = Command("Performance.enable"); return;
+    }
+  }
+  void MeasureReload() {
+    if (!browser_ || performanceRun_ || std::atomic_load(&loadTrace_) || Origin(browser_->GetMainFrame()->GetURL()).empty()) return;
+    auto trace = std::make_shared<LoadTrace>(); std::atomic_store(&loadTrace_, trace);
+    loadURL_ = browser_->GetMainFrame()->GetURL();
+    loadPreviousContexts_.clear(); for (const auto& context : contexts_) loadPreviousContexts_.insert(context.first);
+    loadSnapshotRequest_ = 0; loadSnapshotContext_ = 0; trace->Add("reloadRequested");
+    Event("loadPerformanceStarted");
+    browser_->Reload();
+    CefPostDelayedTask(TID_UI, base::BindOnce(&Client::FinishLoadTrace, CefRefPtr<Client>(this), trace), 60000);
+  }
+  void FinishLoadTrace(std::shared_ptr<LoadTrace> trace) {
+    if (std::atomic_load(&loadTrace_) != trace) return;
+    Event("loadPerformance", trace->Finish(browser_ && browser_->GetMainFrame()->GetURL().ToString() == loadURL_));
+    std::atomic_store(&loadTrace_, std::shared_ptr<LoadTrace>());
+  }
+  void FinishLoadTraceNow() { if (auto trace = std::atomic_load(&loadTrace_)) FinishLoadTrace(trace); }
   void TestIsolation() {
-    auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__opReplyEnded === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined' && typeof globalThis.__opConsultation === 'undefined' && typeof globalThis.__opSendExecutionQuery === 'undefined'");
+    auto p = CefDictionaryValue::Create(); p->SetString("expression", "typeof globalThis.__opPerformance === 'undefined' && typeof globalThis.__opSnapshot === 'undefined' && typeof globalThis.__opAck === 'undefined' && typeof globalThis.__opReplyEnded === 'undefined' && typeof globalThis.__nativeSnapshotScan === 'undefined' && typeof globalThis.__opConsultation === 'undefined' && typeof globalThis.__opSendExecutionQuery === 'undefined'");
     p->SetBool("returnByValue", true); isolationTest_ = Command("Runtime.evaluate", p);
   }
   void Query(const std::string& payload) {
@@ -358,6 +485,12 @@ class Client final : public CefClient, public CefLifeSpanHandler, public CefLoad
  private:
   int64_t key_; std::string requestedURL_, world_, mainFrame_;
   int command_ = 0, install_ = 0, tree_ = 0, isolationTest_ = 0, flush_ = 0, diagnostic_ = 0;
+  int performanceEnable_ = 0, performanceStart_ = 0, performanceRun_ = 0, performanceEnd_ = 0, performanceContext_ = 0;
+  CefRefPtr<CefDictionaryValue> performanceBefore_, performancePage_;
+  std::shared_ptr<LoadTrace> loadTrace_;
+  int loadSnapshotRequest_ = 0, loadSnapshotContext_ = 0;
+  std::set<int> loadPreviousContexts_;
+  std::string loadURL_;
   bool enabled_ = true;
   std::map<int, std::string> contexts_; std::map<int, int> pending_;
   std::map<int, std::string> queries_;
@@ -391,6 +524,9 @@ void op_cef_action(int32_t id, int32_t action) {
     case 2: if (b->CanGoForward()) b->GoForward(); break;
     case 3: b->GetHost()->SetFocus(true); break;
     case 4: found->second->Diagnose(); break;
+    case 5: found->second->MeasurePerformance(); break;
+    case 6: found->second->MeasureReload(); break;
+    case 7: found->second->FinishLoadTraceNow(); break;
   }
 }
 void op_cef_flush(int32_t id) { CEF_REQUIRE_UI_THREAD(); auto i = clients.find(id); if (i != clients.end()) i->second->Flush(); }
@@ -404,6 +540,7 @@ void op_cef_test(int32_t id, int32_t action) {
   if (Origin(b->GetMainFrame()->GetURL()) != fixtureOrigin) return;
   if (action == 6) { i->second->TestIsolation(); return; }
   if (action == 9) { i->second->Command("Page.crash"); return; }
+  if (action == 137) { b->GetMainFrame()->ExecuteJavaScript("window.syntheticTimingRead?.()", "", 0); return; }
   b->GetMainFrame()->ExecuteJavaScript("window.fixture?.(" + std::to_string(action) + ")", "", 0);
 }
 void op_cef_quit(void) {
@@ -443,7 +580,10 @@ int main(int argc, char* argv[]) {
       NSURL* test = [NSURL URLWithString:[NSString stringWithUTF8String:value.c_str()]];
       if ([test.scheme isEqual:@"http"] && [test.host isEqual:@"127.0.0.1"] && test.port && [test.path isEqual:@""]) fixtureOrigin = value;
     }
-    worldSource = source.UTF8String;
+    NSString* performance = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"PerformanceProbe" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
+    if (!performance) return 2;
+    worldSource = performance.UTF8String;
+    worldSource += "\n"; worldSource += source.UTF8String;
     NSString* completion = [NSString stringWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"ReplyCompletion" ofType:@"js"] encoding:NSUTF8StringEncoding error:nil];
     if (!completion) return 2;
     worldSource += "\n"; worldSource += completion.UTF8String;

@@ -19,6 +19,7 @@ try:
     samples=[]
     transport_only = os.environ.get('OP_CEF_TRANSPORT_ONLY') == '1'
     consultation_only = os.environ.get('OP_CEF_CONSULTATION_ONLY') == '1'
+    performance_only = os.environ.get('OP_CEF_PERFORMANCE_ONLY') == '1'
     if consultation_only:
         clinx = pathlib.Path(os.environ.get('OP_CLINX_ROOT', str(root.parent/'CLINX'))).resolve()
         sys.path.insert(0,str(clinx))
@@ -26,12 +27,13 @@ try:
         registry=TaskRegistry(evidence/'consultation-tasks.sqlite3')
         task=registry.create_task(host='local',workspace_alias='test',project_alias='op-test',project_name='OP bridge fixture',cwd=str(evidence),repository_origin=None,branch=None,title='Synthetic OP consultation')
         (evidence/'consultation-config.json').write_text(json.dumps({'command':[sys.executable,str(clinx/'mcp_server.py'),'--stdio','--consultations-only','--task-db',str(registry.path)],'task_ref':task.task_id}))
-    for phase in (['core'] if transport_only or consultation_only else ['core','restart']):
+    for phase in (['core'] if transport_only or consultation_only or performance_only else ['core','restart']):
         # Fixtures use no account data. Keep Chromium's synthetic cookie key away
         # from the system Keychain and production profiles during ad-hoc signing.
         args = ['open','-n','-W',str(app),'--args','--self-test','--use-mock-keychain','--disable-notifications','--self-test-origin='+origin,'--evidence='+str(evidence)]
         if transport_only: args += ['--transport-check']
         if consultation_only: args += ['--consultation-check']
+        if performance_only: args += ['--performance-check']
         if os.environ.get('OP_CEF_HEADER_VISUALS') == '1': args += ['--header-visuals']
         if phase == 'restart': args += ['--restart-check']
         began=time.monotonic(); process=subprocess.Popen(args)

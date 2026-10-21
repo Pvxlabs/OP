@@ -73,6 +73,7 @@ add_custom_command(TARGET ${CEF_TARGET} POST_BUILD
  COMMAND ${CMAKE_COMMAND} -E copy "${NATIVE_LIB}" "${CEF_APP}/Contents/Frameworks/libOPNative.dylib"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/compose-observer.py" "${OP_ROOT}/ChatGPTNative/Services/MessageObserver.js" "${CEF_APP}/Contents/Resources/CEFObserver.js"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ExecutionQuery.js" "${CEF_APP}/Contents/Resources/ExecutionQuery.js"
+ COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/PerformanceProbe.js" "${CEF_APP}/Contents/Resources/PerformanceProbe.js"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/ReplyCompletion.js" "${CEF_APP}/Contents/Resources/ReplyCompletion.js"
  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/Consultation.js" "${CEF_APP}/Contents/Resources/Consultation.js"
  COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/package-icon.py" "${OP_ROOT}/ChatGPTNative/Assets.xcassets/AppIcon.appiconset" "${CEF_APP}/Contents/Resources/OP.icns"

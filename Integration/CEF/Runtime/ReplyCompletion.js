@@ -12,6 +12,10 @@
     timer = setTimeout(scan, delay);
   };
   function scan() {
+    const probe = globalThis.__opPerformance, began = probe?.begin();
+    try { scanBody(); } finally { probe?.end("completion", began); }
+  }
+  function scanBody() {
     timer = 0;
     const id = location.pathname.match(/\/c\/([0-9a-f-]{36})\/?$/i)?.[1]?.toLowerCase() || '';
     if (conversation !== id) { conversation = id; current = null; }

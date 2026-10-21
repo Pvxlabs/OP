@@ -22,6 +22,10 @@
     return text.length + ":" + (h >>> 0);
   };
   function collect(interrupted = false) {
+    const probe = globalThis.__opPerformance, began = probe?.begin();
+    try { return collectBody(interrupted); } finally { probe?.end("collector", began); }
+  }
+  function collectBody(interrupted = false) {
     observedPath = location.pathname;
     const match = location.pathname.match(/\/c\/([0-9a-f-]+)\/?$/i);
     if (!match || !uuid.test(match[1])) return null; // No fabricated identity for temporary/unknown chats.
@@ -31,6 +35,7 @@
     let bytes = 0, needsStableScan = false;
     // Budget newest messages first; an old long message must not starve a new reply.
     const nodes = Array.from(document.querySelectorAll("[data-dil-message-id]")).slice(-500).reverse();
+    globalThis.__opPerformance?.count("collectorNodes", nodes.length);
     for (const node of nodes) {
       const messageID = node.getAttribute("data-dil-message-id");
       if (!uuid.test(messageID || "") || seen.has(messageID.toLowerCase())) continue;
@@ -50,6 +55,7 @@
       // Capture response text, not thinking/tool cards, buttons or the global live region.
       let body = bodyCache.get(node);
       if (!body) {
+        globalThis.__opPerformance?.count("bodyCacheMisses");
         const text = node.innerText?.trim() || "";
         body = {text, size: new TextEncoder().encode(text).length, hash: signature(text)};
       }
@@ -117,6 +123,7 @@
     });
     const page = batch.conversationID + ":" + batch.pageState;
     if (!batch.messages.length && page === lastPage) return;
+    globalThis.__opPerformance?.count("snapshotBatches");
     pending = true;
     try {
       if (await window.webkit.messageHandlers.localReplySnapshot.postMessage(batch) && captureEnabled) {
@@ -146,6 +153,11 @@
       (!node.childElementCount && errorText(node.textContent || ""));
   }
   function consumeMutations(records) {
+    const probe = globalThis.__opPerformance, began = probe?.begin();
+    probe?.count("mutationRecords", records.length);
+    try { return consumeMutationRecords(records); } finally { probe?.end("mutations", began); }
+  }
+  function consumeMutationRecords(records) {
     let relevant = false;
     for (const record of records) {
       const target = record.target.nodeType === Node.ELEMENT_NODE ? record.target : record.target.parentElement;

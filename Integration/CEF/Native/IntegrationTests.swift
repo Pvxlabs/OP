@@ -10,6 +10,7 @@ import AppKit
     var checks: [String] = []
     var metrics: [String: Double] = [:]
     var transportEvents: [(browser: Int32, value: [String: Any])] = []
+    var performanceReports: [Int32: [String: Any]] = [:]
     let root: URL
     init(product: NativeProduct) {
         self.product = product
@@ -19,6 +20,9 @@ import AppKit
     func event(_ name: String, browser: Int32, value: String) {
         if name == "transport", let metadata = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any] {
             transportEvents.append((browser, metadata))
+        }
+        if ["performance", "loadPerformance"].contains(name), let report = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any] {
+            performanceReports[browser] = report
         }
         guard !["address", "title"].contains(name) else { return }
         let entry: [String: Any] = ["event": name, "browser": browser, "value": value, "uptime": ProcessInfo.processInfo.systemUptime]
@@ -57,7 +61,14 @@ import AppKit
         let began = ContinuousClock.now
         let restart = CommandLine.arguments.contains("--restart-check")
         do {
-            if CommandLine.arguments.contains("--consultation-check") {
+            if CommandLine.arguments.contains("--performance-check") {
+                try mode("normal")
+                product.openWindow(url: CEFIdentity.url(summary(a)))
+                let workspace = product.windows.last!.workspace
+                try await wait("performance fixture readiness") { workspace.active?.readableConversation == self.a }
+                guard let session = workspace.active else { throw CocoaError(.validationMissingMandatoryProperty) }
+                try await runPerformanceProbe(session)
+            } else if CommandLine.arguments.contains("--consultation-check") {
                 try await runConsultations()
             } else if CommandLine.arguments.contains("--transport-check") {
                 try await runTransportDiagnostics()
@@ -81,6 +92,7 @@ import AppKit
                 guard let first = workspace.active else { throw CocoaError(.validationMissingMandatoryProperty) }
                 try check(scene.window!.frame.width <= 1280, "native window size remains bounded during SwiftUI local recovery")
                 let initial = await product.library.messages(a)
+                try await runPerformanceProbe(first)
                 try check(first.observerAvailable && first.browser > 0, "isolated CEF observer installed and real renderer snapshot saved")
                 try check(initial.count == 1 && initial[0].body.utf8.count > 4000, "full synthetic rendered body captured")
                 try check(initial[0].state == .pageEnded, "DOM turn complete stays pageEnded, never server-complete")

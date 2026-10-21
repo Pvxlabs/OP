@@ -6,6 +6,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         with (root/'fixture-requests.ndjson').open('a') as log:
             log.write(json.dumps({'path':self.path})+'\n')
+        if self.path == '/backend-api/conversation/synthetic-timing':
+            time.sleep(0.15)
+            body = b'{"synthetic":true}'
+            self.send_response(200); self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body))); self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith('/transport/'):
             case = self.path.rsplit('/', 1)[-1]
             body = b'data: synthetic partial payload\n\n'
@@ -101,7 +108,8 @@ send.addEventListener('click',()=>{{
      .then(response=>response.text()).catch(()=>{{}});
    if(kind==='cancel') setTimeout(()=>controller.abort(),100);
  }}
-}};</script>'''
+}};</script>
+<script>window.syntheticTimingRead = () => fetch('/backend-api/conversation/synthetic-timing');</script>'''
         data = html.encode(); self.send_response(status); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
 server = http.server.ThreadingHTTPServer(('127.0.0.1',0), Handler)
 (root/'port').write_text(str(server.server_port)); server.serve_forever()
